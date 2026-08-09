@@ -6,11 +6,16 @@ After=network.target keiri-ai-api.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/keiri-ai/app
+WorkingDirectory=/opt/keiri-ai/app/.next/standalone
 Environment=NODE_ENV=production
 Environment=PORT=3100
+# HOSTNAME を指定しないと 0.0.0.0（全インターフェース）で待ち受けてしまい、
+# nginx の Basic認証を経由せず直接アクセスできる状態になる。必ず指定する。
+Environment=HOSTNAME=127.0.0.1
 Environment=API_BASE_URL=http://127.0.0.1:8101
-ExecStart=/usr/bin/npm run start
+# next.config.mjs が output:"standalone" のため `next start` は使えない。
+# ビルド成果物の server.js を直接起動する（PORT/HOSTNAME 環境変数を参照する）。
+ExecStart=/usr/bin/node /opt/keiri-ai/app/.next/standalone/server.js
 Restart=on-failure
 RestartSec=5
 MemoryMax=800M

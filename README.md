@@ -59,6 +59,11 @@ pip install -r requirements.txt --break-system-packages
 cd ../app
 npm install
 npm run build
+
+# output:"standalone" のため、静的ファイルを standalone 配下へコピーする
+# （省略するとCSS/JSが404になる。ビルドし直すたびに必要）
+cp -r .next/static .next/standalone/.next/
+[ -d public ] && cp -r public .next/standalone/
 ```
 
 ### 5. 環境変数の設定
@@ -82,7 +87,7 @@ cp .env.example .env
 ### 6. Basic認証の設定（Nginx）
 
 ```bash
-sudo htpasswd -c /etc/nginx/.htpasswd eigyo
+sudo htpasswd -c /etc/nginx/.htpasswd-keiri-ai eigyo
 # パスワードの入力を求められます
 ```
 
@@ -94,16 +99,16 @@ server {
     server_name <ドメイン名>;
 
     auth_basic "Restricted";
-    auth_basic_user_file /etc/nginx/.htpasswd;
+    auth_basic_user_file /etc/nginx/.htpasswd-keiri-ai;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3100;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
     location /api/ {
-        proxy_pass http://127.0.0.1:8000/;
+        proxy_pass http://127.0.0.1:8101/;
         proxy_set_header Host $host;
     }
 
@@ -124,13 +129,22 @@ sudo systemctl reload nginx
 ```bash
 # APIサーバー
 cd api && source .venv/bin/activate
-uvicorn main:app --host 127.0.0.1 --port 8000
+uvicorn main:app --host 127.0.0.1 --port 8101
 
-# フロントエンド
-cd app && npm run start
+# フロントエンド（standalone構成のため `npm run start` は使えない）
+cd app
+PORT=3100 HOSTNAME=127.0.0.1 node .next/standalone/server.js
 ```
 
-常駐化はsystemdまたはPM2で行います（詳細は `scripts/` を参照）。
+起動後、**待ち受けアドレスが `127.0.0.1` に限定されているか必ず確認**します。
+
+```bash
+ss -tlnp | grep -E '3100|8101'
+# 期待: 127.0.0.1:3100 / 127.0.0.1:8101
+# 0.0.0.0 や * になっていたら nginx の Basic認証を迂回できる状態です
+```
+
+常駐化はsystemdで行います（`scripts/keiri-ai-*.service` を参照）。
 
 ## 使い方
 

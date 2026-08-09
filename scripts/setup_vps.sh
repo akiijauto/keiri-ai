@@ -23,6 +23,11 @@ echo "source .venv/bin/activate && pip install -r requirements.txt"
 echo
 echo "== 4. Node環境 =="
 echo "cd ${APP_DIR}/app && npm install && npm run build"
+echo "# next.config.mjs は output:\"standalone\" のため、ビルド後に静的ファイルを"
+echo "# standalone 配下へコピーする必要がある（省略するとCSS/JSが404になる）。"
+echo "cp -r ${APP_DIR}/app/.next/static ${APP_DIR}/app/.next/standalone/.next/"
+echo "[ -d ${APP_DIR}/app/public ] && cp -r ${APP_DIR}/app/public ${APP_DIR}/app/.next/standalone/"
+echo "# 起動は 'npm run start' ではなく .next/standalone/server.js を使う（下記8参照）"
 
 echo
 echo "== 5. 環境変数 =="
@@ -52,4 +57,7 @@ echo "sudo systemctl status keiri-ai-api keiri-ai-web"
 echo
 echo "== 9. 動作確認 =="
 echo "curl -s http://127.0.0.1:8101/health"
+echo "curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:3100"
+echo "# 待ち受けアドレスの検証（127.0.0.1 限定であること。0.0.0.0/* なら設定が効いていない）"
+echo "ss -tlnp | grep -E '3100|8101'"
 echo "# ブラウザで http://YOUR_DOMAIN/ にアクセスし、Basic認証(eigyo)でログイン"
