@@ -124,6 +124,42 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+> `scripts/nginx-keiri-ai.conf` は **certbot 実行前のHTTP版（ブートストラップ用）** です。
+> 証明書ファイルは certbot 実行後にしか存在しないため、SSL入りの設定を先に書くと
+> 初回デプロイ時に `nginx -t` が失敗します。SSL化は次項で certbot に任せます。
+
+### 6.5 HTTPS化（Let's Encrypt）
+
+Basic認証のパスワードはHTTPでは平文で流れるため、**公開前に必ずHTTPS化**します。
+
+前提: DNSがVPSのIPに向いており、HTTPでアクセスできること。
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx   # 未インストールの場合のみ
+sudo certbot --nginx -d keiri.ai-l-a-b-o.com --redirect
+```
+
+certbot が `/etc/nginx/sites-available/keiri-ai` に `listen 443`・`ssl_certificate`・
+HTTP→HTTPSリダイレクトを追記し、nginxをreloadします。
+`--redirect` を付けるとHTTPアクセスは自動でHTTPSへ転送されます。
+
+自動更新の確認:
+
+```bash
+sudo systemctl status certbot.timer                          # enabled / active であること
+sudo certbot renew --dry-run --cert-name keiri.ai-l-a-b-o.com
+```
+
+動作確認（Basic認証が効いていれば401が返る）:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://keiri.ai-l-a-b-o.com
+```
+
+> **設定の正はどちらか**: certbot 実行後、この設定の最終形は
+> **VPS上の `/etc/nginx/sites-enabled/keiri-ai` が正** になります。
+> リポジトリ側はHTTP版のまま維持します（理由は `振り返り.md` を参照）。
+
 ### 7. 起動
 
 ```bash
