@@ -5,7 +5,7 @@ After=network.target keiri-ai-api.service
 
 [Service]
 Type=simple
-User=YOUR_USER
+User=root
 WorkingDirectory=/opt/keiri-ai/app
 Environment=NODE_ENV=production
 Environment=PORT=3100

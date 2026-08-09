@@ -5,7 +5,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=YOUR_USER
+User=root
 WorkingDirectory=/opt/keiri-ai/api
 EnvironmentFile=/opt/keiri-ai/.env
 ExecStart=/opt/keiri-ai/api/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8101
