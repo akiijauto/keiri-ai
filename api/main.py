@@ -23,7 +23,7 @@ import accounts
 import freee_csv
 import pdf_reader
 import prompts
-from llm_client import get_client
+from llm_client import LLMRateLimitError, get_client
 
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "20"))
 
@@ -121,6 +121,12 @@ async def analyze(file: UploadFile = File(...)) -> dict:
             # 電帳法の検索要件を意識したファイル名案
             "suggested_filename": _suggest_filename(extracted),
         }
+    except LLMRateLimitError as exc:
+        # 上流のレート制限。500（サーバー障害）ではなく503として、
+        # 再試行すれば直る種類の失敗であることを利用者に伝える。
+        raise HTTPException(
+            503, f"{exc} 時間をおいて再度お試しください。"
+        )
     except json.JSONDecodeError as exc:
         raise HTTPException(502, f"AIの応答をJSONとして解析できませんでした: {exc}")
     finally:
