@@ -1,0 +1,162 @@
+# 請求書仕訳AI（仮称）
+
+請求書PDFをアップロードすると、AIが内容を読み取り**仕訳案**を生成します。
+人間が確認・修正して承認すると、freee形式の仕訳CSVとして出力できます。
+
+> **設計思想**: AIは案を出すだけ。確定は必ず人間が行います（内部統制への配慮）。
+
+---
+
+## 特徴
+
+- 推定根拠を必ず表示（なぜこの勘定科目か／なぜこの税区分か）
+- インボイス登録番号の有無を自動チェック
+- 電子帳簿保存法の検索要件（日付・金額・取引先）を意識したファイル管理
+- 確信度が低い項目は要確認フラグを表示
+- LLMを差し替え可能な設計（既定: Gemini）
+
+## 動作環境
+
+| 項目 | 要件 |
+|------|------|
+| OS | Ubuntu 24.04 LTS |
+| Node.js | 20.x 以上 |
+| Python | 3.12 以上 |
+| その他 | poppler-utils（pdf2image用）、Nginx |
+
+## セットアップ手順
+
+### 1. リポジトリ取得
+
+```bash
+git clone <リポジトリURL>
+cd keiri-ai
+```
+
+### 2. システムパッケージ
+
+```bash
+sudo apt update
+sudo apt install -y poppler-utils nginx apache2-utils
+```
+
+> `apache2-utils` はBasic認証のパスワードファイル作成（htpasswd）に使用します。
+
+### 3. バックエンド（FastAPI）
+
+```bash
+cd api
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt --break-system-packages
+```
+
+> Ubuntu 24.04 では `--break-system-packages` が必要な場合があります。
+
+### 4. フロントエンド（Next.js）
+
+```bash
+cd ../app
+npm install
+npm run build
+```
+
+### 5. 環境変数の設定
+
+`.env.example` をコピーして `.env` を作成し、値を設定します。
+
+```bash
+cp .env.example .env
+```
+
+| 変数名 | 説明 |
+|--------|------|
+| `LLM_PROVIDER` | 使用するLLM（既定: `gemini`） |
+| `GEMINI_API_KEY` | Gemini APIキー |
+| `ANTHROPIC_API_KEY` | Claude利用時のみ（任意） |
+| `SUPABASE_URL` | SupabaseプロジェクトURL |
+| `SUPABASE_KEY` | Supabase APIキー |
+
+> **重要**: `.env` は絶対にコミットしないでください（`.gitignore` に登録済み）。
+
+### 6. Basic認証の設定（Nginx）
+
+```bash
+sudo htpasswd -c /etc/nginx/.htpasswd eigyo
+# パスワードの入力を求められます
+```
+
+Nginx設定例（`/etc/nginx/sites-available/keiri-ai`）:
+
+```nginx
+server {
+    listen 80;
+    server_name <ドメイン名>;
+
+    auth_basic "Restricted";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+    }
+
+    client_max_body_size 20M;
+}
+```
+
+有効化:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/keiri-ai /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 7. 起動
+
+```bash
+# APIサーバー
+cd api && source .venv/bin/activate
+uvicorn main:app --host 127.0.0.1 --port 8000
+
+# フロントエンド
+cd app && npm run start
+```
+
+常駐化はsystemdまたはPM2で行います（詳細は `scripts/` を参照）。
+
+## 使い方
+
+1. ブラウザでアクセスし、Basic認証でログイン
+2. 請求書PDFをアップロード
+3. AIが読み取った内容と仕訳案、推定根拠を確認
+4. 必要に応じて修正し、承認
+5. 「CSV出力」でfreee形式の仕訳CSVをダウンロード
+
+## ディレクトリ構成
+
+```
+keiri-ai/
+├── app/          # Next.js フロントエンド
+├── api/          # FastAPI バックエンド
+│   └── llm_client.py   # LLM抽象化レイヤー
+├── docs/         # 設計資料
+├── samples/      # サンプル請求書
+├── scripts/      # デプロイ・運用スクリプト
+├── 要件定義.md
+├── README.md
+└── 振り返り.md
+```
+
+## 注意事項
+
+- 本サービスはポートフォリオ用のデモです。実際の会計処理には使用しないでください
+- 出力される仕訳はAIによる推定であり、必ず人間による確認が必要です
+- サンプル請求書は架空企業のものです

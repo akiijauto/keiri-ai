@@ -1,0 +1,29 @@
+# 環境変数・機密情報
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+.htpasswd
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# アップロードファイル・一時ファイル
+uploads/
+tmp/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

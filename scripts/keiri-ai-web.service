@@ -1,0 +1,19 @@
+# /etc/systemd/system/keiri-ai-web.service
+[Unit]
+Description=Keiri AI - Next.js frontend
+After=network.target keiri-ai-api.service
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/opt/keiri-ai/app
+Environment=NODE_ENV=production
+Environment=PORT=3100
+Environment=API_BASE_URL=http://127.0.0.1:8100
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target
