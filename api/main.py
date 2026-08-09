@@ -21,11 +21,15 @@ from pydantic import BaseModel
 
 import accounts
 import freee_csv
+import image_prep
 import pdf_reader
 import prompts
 from llm_client import LLMRateLimitError, get_client
 
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "20"))
+
+# 受け付ける画像形式（フロントの accept と揃える）
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
 app = FastAPI(title="請求書仕訳AI", version="0.1.0")
 app.add_middleware(
@@ -53,37 +57,88 @@ def list_accounts() -> dict:
     }
 
 
+def _input_kind(file: UploadFile) -> str:
+    """アップロードされたものがPDFか画像かを判定する。
+
+    スマホのカメラからは content_type が付くが、環境によって欠けることもあるため
+    拡張子とMIMEの両方を見る。
+    """
+    name = (file.filename or "").lower()
+    ctype = (file.content_type or "").lower()
+    if name.endswith(".pdf") or ctype == "application/pdf":
+        return "pdf"
+    # HEICもここで拾い、image_prep 側で具体的な対処を案内する
+    if ctype.startswith("image/") or name.endswith(IMAGE_EXTS + (".heic", ".heif")):
+        return "image"
+    return "unknown"
+
+
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)) -> dict:
-    """請求書PDFを解析し、抽出結果と仕訳案を返す。"""
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(400, "PDFファイルをアップロードしてください")
+    """請求書（PDFまたは撮影画像）を解析し、抽出結果と仕訳案を返す。"""
+    kind = _input_kind(file)
+    if kind == "unknown":
+        raise HTTPException(
+            400, "PDFまたは画像（JPEG・PNG・WebP）をアップロードしてください"
+        )
 
     body = await file.read()
     if len(body) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"ファイルサイズは{MAX_UPLOAD_MB}MBまでです")
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        tmp.write(body)
-        tmp_path = Path(tmp.name)
-
+    tmp_path: Path | None = None
     try:
-        material = pdf_reader.extract(tmp_path)
         client = get_client()
 
         # --- 1. 項目抽出 ---
-        if material.is_scanned:
-            if not material.images:
-                raise HTTPException(422, "PDFからテキストも画像も取得できませんでした")
+        if kind == "image":
+            # カメラ撮影。EXIF回転の補正とリサイズをしてから渡す。
+            try:
+                prepared = image_prep.prepare(body, filename=file.filename or "")
+            except image_prep.UnsupportedImageError as exc:
+                raise HTTPException(415, str(exc))
+
             extracted = client.generate_from_image(
-                prompts.extraction_prompt(), material.images[0],
-                system=prompts.SYSTEM,
+                prompts.extraction_prompt(), prepared.data,
+                mime_type=prepared.mime_type, system=prompts.SYSTEM,
             ).as_json()
+            source = {
+                "filename": file.filename,
+                "input_type": "camera",
+                "is_scanned": True,
+                "page_count": 1,
+                "image": {
+                    "width": prepared.width,
+                    "height": prepared.height,
+                    "rotated": prepared.was_rotated,
+                    "resized": prepared.was_resized,
+                },
+            }
         else:
-            extracted = client.generate(
-                f"{prompts.extraction_prompt()}\n\n--- 請求書テキスト ---\n{material.text}",
-                system=prompts.SYSTEM,
-            ).as_json()
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(body)
+                tmp_path = Path(tmp.name)
+
+            material = pdf_reader.extract(tmp_path)
+            if material.is_scanned:
+                if not material.images:
+                    raise HTTPException(422, "PDFからテキストも画像も取得できませんでした")
+                extracted = client.generate_from_image(
+                    prompts.extraction_prompt(), material.images[0],
+                    system=prompts.SYSTEM,
+                ).as_json()
+            else:
+                extracted = client.generate(
+                    f"{prompts.extraction_prompt()}\n\n--- 請求書テキスト ---\n{material.text}",
+                    system=prompts.SYSTEM,
+                ).as_json()
+            source = {
+                "filename": file.filename,
+                # スキャンPDF（画像PDF）と、テキストPDFを区別する
+                "input_type": "scan" if material.is_scanned else "pdf",
+                "is_scanned": material.is_scanned,
+                "page_count": material.page_count,
+            }
 
         # --- 2. 仕訳案生成 ---
         journal = client.generate(
@@ -109,11 +164,7 @@ async def analyze(file: UploadFile = File(...)) -> dict:
                 warnings.append(f"マスタに無い税区分です: {e.get('tax_code')}")
 
         return {
-            "source": {
-                "filename": file.filename,
-                "is_scanned": material.is_scanned,
-                "page_count": material.page_count,
-            },
+            "source": source,
             "extracted": extracted,
             "journal": journal,
             "validation": {"balanced": balanced, "message": balance_msg},
@@ -130,7 +181,8 @@ async def analyze(file: UploadFile = File(...)) -> dict:
     except json.JSONDecodeError as exc:
         raise HTTPException(502, f"AIの応答をJSONとして解析できませんでした: {exc}")
     finally:
-        tmp_path.unlink(missing_ok=True)
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
 
 class ExportRequest(BaseModel):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Entry = {
   debit_account: string;
@@ -15,7 +15,13 @@ type Entry = {
 };
 
 type Result = {
-  source: { filename: string; is_scanned: boolean; page_count: number };
+  source: {
+    filename: string;
+    input_type: "pdf" | "scan" | "camera";
+    is_scanned: boolean;
+    page_count: number;
+    image?: { width: number; height: number; rotated: boolean; resized: boolean };
+  };
   extracted: Record<string, any>;
   journal: {
     is_qualified_invoice: boolean;
@@ -34,6 +40,25 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // 画像を選んだらプレビューURLを作る。撮り直すかどうかをその場で判断できるようにする。
+  useEffect(() => {
+    if (!file || !file.type.startsWith("image/")) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    // 差し替え・アンマウント時に解放しないとメモリを掴んだままになる
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  function pickFile(f: File | null) {
+    setFile(f);
+    setResult(null);
+    setError(null);
+  }
 
   async function analyze() {
     if (!file) return;
@@ -44,7 +69,14 @@ export default function Home() {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/analyze", { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`解析に失敗しました (${res.status})`);
+      if (!res.ok) {
+        // HEICの案内やレート制限のメッセージはサーバー側にあるため、そのまま見せる
+        const detail = await res
+          .json()
+          .then((d) => d?.detail)
+          .catch(() => null);
+        throw new Error(detail || `解析に失敗しました (${res.status})`);
+      }
       const data: Result = await res.json();
       setResult(data);
       setEntries(data.journal.entries ?? []);
@@ -110,15 +142,49 @@ export default function Home() {
       </header>
 
       <section className="card">
-        <h2>1. 請求書をアップロード</h2>
-        <input
-          type="file"
-          accept="application/pdf"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        />
+        <h2>1. 請求書を読み込む</h2>
+        <div className="inputs">
+          <label className="pick">
+            PDFを選ぶ
+            <span className="sub">パソコンに保存済みの請求書</span>
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <label className="pick">
+            カメラで撮影
+            <span className="sub">紙の請求書をその場で撮る</span>
+            {/* capture="environment" でスマホの背面カメラが起動する。
+                PCでは通常のファイル選択にフォールバックする。 */}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        </div>
+
+        {file && (
+          <div className="preview">
+            <p className="fname">{file.name}</p>
+            {previewUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={previewUrl} alt="撮影した請求書のプレビュー" />
+            ) : (
+              <span className="pdficon">PDF（プレビューなし）</span>
+            )}
+          </div>
+        )}
+
         <button onClick={analyze} disabled={!file || loading}>
           {loading ? "解析中…" : "仕訳案を生成"}
         </button>
+        <p className="note">
+          写真の場合は、請求書全体が入るように・文字がぼやけないように撮ってください。
+        </p>
         {error && <p className="error">{error}</p>}
       </section>
 
@@ -149,7 +215,21 @@ export default function Home() {
               </div>
               <div>
                 <dt>読取方式</dt>
-                <dd>{result.source.is_scanned ? "画像（スキャン）" : "テキスト"}</dd>
+                <dd>
+                  {result.source.input_type === "camera"
+                    ? "カメラ撮影"
+                    : result.source.input_type === "scan"
+                    ? "画像（スキャンPDF）"
+                    : "テキスト（PDF）"}
+                  {result.source.image && (
+                    <span className="note">
+                      {" "}
+                      {result.source.image.width}×{result.source.image.height}px
+                      {result.source.image.rotated && "・回転補正あり"}
+                      {result.source.image.resized && "・縮小あり"}
+                    </span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>保存ファイル名案</dt>
