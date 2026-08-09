@@ -9,11 +9,11 @@ User=YOUR_USER
 WorkingDirectory=/opt/keiri-ai/app
 Environment=NODE_ENV=production
 Environment=PORT=3100
-Environment=API_BASE_URL=http://127.0.0.1:8100
+Environment=API_BASE_URL=http://127.0.0.1:8101
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=5
-MemoryMax=600M
+MemoryMax=800M
 
 [Install]
 WantedBy=multi-user.target

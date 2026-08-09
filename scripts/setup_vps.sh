@@ -37,7 +37,7 @@ echo "sudo htpasswd -c /etc/nginx/.htpasswd-keiri-ai eigyo"
 echo
 echo "== 7. Nginx =="
 echo "sudo cp ${APP_DIR}/scripts/nginx-keiri-ai.conf /etc/nginx/sites-available/keiri-ai"
-echo "# server_name を自分のドメインに書き換える"
+echo "# server_name は keiri.ai-l-a-b-o.com に設定済み（別ドメインを使う場合のみ書き換える）"
 echo "sudo ln -s /etc/nginx/sites-available/keiri-ai /etc/nginx/sites-enabled/"
 echo "sudo nginx -t && sudo systemctl reload nginx"
 
@@ -51,5 +51,5 @@ echo "sudo systemctl status keiri-ai-api keiri-ai-web"
 
 echo
 echo "== 9. 動作確認 =="
-echo "curl -s http://127.0.0.1:8100/health"
+echo "curl -s http://127.0.0.1:8101/health"
 echo "# ブラウザで http://YOUR_DOMAIN/ にアクセスし、Basic認証(eigyo)でログイン"
