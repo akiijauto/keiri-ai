@@ -46,14 +46,32 @@
 
   <h3>1-1. 検証用紙を用意する</h3>
   <p>
-    <code>secure-local-ocr/samples/</code> にある2枚を印刷してください。
-    印刷できない場合は、別の画面（PC・スマホ）に表示してタブレットで撮影しても構いません。
+    <code>secure-local-ocr/samples/</code> にサンプルがあります。
+    <strong>印刷できる場合はPDF、できない場合は画面表示用のPNG</strong>を使ってください。
   </p>
+  <table>
+    <thead><tr><th>状況</th><th>使うファイル</th><th>やり方</th></tr></thead>
+    <tbody>
+      <tr><td>印刷できる</td><td><code>test-form-01.pdf</code> / <code>test-form-02.pdf</code></td>
+          <td>A4で印刷して撮影。実際の運用に近い条件</td></tr>
+      <tr><td>印刷できない</td><td><code>test-screen-01.png</code>（縦）/ <code>test-screen-02.png</code>（横）</td>
+          <td>スマホやPCの画面に全画面表示し、タブレットで撮影。
+              画面の明るさは最大にし、部屋の照明の映り込みを避ける</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>画面撮影は紙より条件が悪くなります。</strong>
+    バックライトとモアレで輪郭が甘くなるためです。
+    画面で読めれば紙でも読めますが、逆は成り立ちません。
+    画面撮影の結果は「下限の目安」として記録し、印刷できる環境ができたら取り直してください。
+  </div>
   <table>
     <thead><tr><th>ファイル</th><th>内容</th></tr></thead>
     <tbody>
       <tr><td><code>test-form-01.pdf</code></td><td>入居申込書。必須6項目を含む標準的な様式</td></tr>
       <tr><td><code>test-form-02.pdf</code></td><td>連絡先登録票。ラベルの次の行に値がある様式と、小さい文字</td></tr>
+      <tr><td><code>test-screen-01.png</code></td><td>入居申込書（画面表示用・縦）。文字を大きくしたもの</td></tr>
+      <tr><td><code>test-screen-02.png</code></td><td>連絡先登録票（画面表示用・横）</td></tr>
       <tr><td><code>expected-values.html</code></td><td><strong>期待値の一覧（答え合わせ用）</strong>。用紙には載せていません</td></tr>
     </tbody>
   </table>

@@ -12,10 +12,38 @@
 </header>
 <main>
 <section>
+  <h2>サンプルの種類</h2>
+  <table>
+    <thead><tr><th>ファイル</th><th>用途</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><code>test-screen-01.png</code></td><td><strong>別の画面に表示して撮影</strong>（縦・スマホ向け）</td>
+          <td>入居申込書。文字を大きくし、画面撮影でも読める濃さにしてある</td></tr>
+      <tr><td><code>test-screen-02.png</code></td><td>別の画面に表示して撮影（横・PCモニタ向け）</td>
+          <td>連絡先登録票。ラベルが値の上の行にある様式</td></tr>
+      <tr><td><code>test-form-01.pdf / .png</code></td><td>印刷して撮影（A4）</td>
+          <td>入居申込書。実際の帳票に近い文字サイズ</td></tr>
+      <tr><td><code>test-form-02.pdf / .png</code></td><td>印刷して撮影（A4）</td>
+          <td>連絡先登録票。小さい文字を含む</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>画面を撮影した結果は、紙より不利に出ます。</strong>
+    バックライトの反射とモアレで輪郭が甘くなるためです。
+    画面撮影で読めれば紙でも読めますが、逆は成り立ちません。
+    印刷できる環境ができたら、A4版で取り直して記録してください。
+  </div>
+</section>
+
+<section>
   <h2>使い方</h2>
   <p>
-    <code>test-form-01.pdf</code> / <code>test-form-02.pdf</code> を印刷（または別の画面に表示）して撮影し、
+    いずれかのサンプルを表示または印刷して撮影し、
     アプリの確認画面に出た値を下表と突き合わせてください。
+  </p>
+  <p class="note">
+    <code>test-screen-01</code> は <code>test-form-01</code> と同じ人物・同じ値です（住所の建物名だけ省いています）。
+    <code>test-screen-02</code> も <code>test-form-02</code> と同じ値です。
+    つまり下表の期待値がそのまま使えます。
   </p>
   <div class="callout">
     期待値はこの別紙にだけ書いてあります。用紙そのものに答えを載せると、
@@ -33,8 +61,10 @@
       <tr><td>フリガナ</td><td>ヤマダ　タロウ</td><td><code>ヤマダ　タロウ</code></td></tr>
       <tr><td>生年月日</td><td>昭和55年1月1日</td><td><code>1980-01-01</code></td></tr>
       <tr><td>郵便番号</td><td>〒150-0001</td><td><code>150-0001</code></td></tr>
-      <tr><td>住所</td><td>東京都渋谷区神宮前１－２－３<br>グランドメゾン渋谷 401</td>
-          <td><code>東京都渋谷区神宮前1-2-3　グランドメゾン渋谷　401</code></td></tr>
+      <tr><td>住所</td><td>東京都渋谷区神宮前１－２－３<br>グランドメゾン渋谷 401<br>
+          <span class="note">（screen版は建物名なし）</span></td>
+          <td><code>東京都渋谷区神宮前1-2-3　グランドメゾン渋谷　401</code><br>
+          <span class="note">screen版: <code>東京都渋谷区神宮前1-2-3</code></span></td></tr>
       <tr><td>電話番号</td><td>090-1234-5678</td><td><code>09012345678</code></td></tr>
       <tr><td>メールアドレス</td><td>taro.yamada@example.co.jp</td><td><code>taro.yamada@example.co.jp</code></td></tr>
       <tr><td>入居予定日</td><td>令和8年4月1日</td><td><code>2026-04-01</code></td></tr>
