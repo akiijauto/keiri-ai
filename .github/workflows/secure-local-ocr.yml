@@ -135,8 +135,12 @@ jobs:
             echo "- offlineビルドに INTERNET 権限が無いことは、このビルドの検証ステップで実測済みです。"
           } > notes.md
 
+          # タグは実際にビルドしたコミットへ向ける。
+          # 指定しないと既定ブランチのコミットにタグが付き、
+          # 「このAPKはどのコードから作られたか」を後から辿れなくなる。
           gh release create "$TAG" \
             --repo "$REPO" \
+            --target "$GITHUB_SHA" \
             --title "Secure Local OCR 実機検証ビルド #${RUN_NUMBER}" \
             --prerelease \
             --notes-file notes.md \
