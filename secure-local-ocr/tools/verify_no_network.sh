@@ -7,16 +7,26 @@
 #   動的検査 : 実端末で通信を捕捉し tools/analyze_pcap.py で判定する（手順を末尾に表示）
 #
 # 使い方:
-#   tools/verify_no_network.sh                       # 既定のAPKを検査
-#   tools/verify_no_network.sh path/to/app.apk       # 任意のAPKを検査
+#   tools/verify_no_network.sh                       # offlineビルドのAPKをすべて検査
+#   tools/verify_no_network.sh path/to/app.apk ...   # 任意のAPKを検査
 #
 # 終了コード: 0=合格 / 1=不合格 / 2=前提不足
 
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_APK="$REPO_ROOT/android/app/build/outputs/apk/offline/debug/app-offline-debug.apk"
-APK="${1:-$DEFAULT_APK}"
+OFFLINE_APK_DIR="$REPO_ROOT/android/app/build/outputs/apk/offline/debug"
+
+# APKはABIごとに分割されるため、名前を決め打ちせず存在するものをすべて検査する。
+# 1つでも通信権限を持っていたら不合格。
+APKS=()
+if [ "$#" -ge 1 ]; then
+  APKS=("$@")
+else
+  while IFS= read -r found; do
+    APKS+=("$found")
+  done < <(find "$OFFLINE_APK_DIR" -maxdepth 1 -name '*.apk' 2>/dev/null | sort)
+fi
 
 FORBIDDEN_PERMISSIONS=(
   "android.permission.INTERNET"
@@ -42,12 +52,11 @@ find_aapt2() {
 say "=============================================="
 say " OCRフェーズ 通信検証（静的検査）"
 say "=============================================="
-say "対象APK: $APK"
-say ""
 
-if [ ! -f "$APK" ]; then
+if [ "${#APKS[@]}" -eq 0 ]; then
   say "APKが見つかりません。先にビルドしてください:"
-  say "  cd android && ANDROID_HOME=... gradle :app:assembleOfflineDebug"
+  say "  cd android && ANDROID_HOME=... ./gradlew :app:assembleOfflineDebug"
+  say "  （探索先: $OFFLINE_APK_DIR）"
   exit 2
 fi
 
@@ -56,31 +65,46 @@ AAPT2="$(find_aapt2)" || {
   exit 2
 }
 
-say "[1] 権限の実測"
-PERMISSIONS="$("$AAPT2" dump permissions "$APK")"
-for perm in "${FORBIDDEN_PERMISSIONS[@]}"; do
-  if printf '%s' "$PERMISSIONS" | grep -q "$perm"; then
-    ng "$perm を保持している（OCR専用ビルドでは保持してはならない）"
-  else
-    ok "$perm を保持していない"
-  fi
+say "対象APK: ${#APKS[@]}件"
+for apk in "${APKS[@]}"; do
+  say "  - $(basename "$apk")"
 done
 say ""
-say "  APKが宣言する全権限:"
-printf '%s\n' "$PERMISSIONS" | grep "uses-permission" | sed 's/^/    /'
-say ""
 
-say "[2] 平文通信の禁止設定"
-if "$AAPT2" dump xmltree "$APK" --file res/xml/network_security_config.xml >/dev/null 2>&1; then
-  NSC="$("$AAPT2" dump xmltree "$APK" --file res/xml/network_security_config.xml 2>/dev/null)"
-  if printf '%s' "$NSC" | grep -q 'cleartextTrafficPermitted.*0xffffffff'; then
-    info "一部ドメインで平文通信が許可されている（社内検証用ループバックの想定。運用ビルドでは外すこと）"
+for APK in "${APKS[@]}"; do
+  if [ ! -f "$APK" ]; then
+    ng "$(basename "$APK") が存在しない"
+    continue
   fi
-  ok "ネットワークセキュリティ設定が同梱されている"
-else
-  info "ネットワークセキュリティ設定が見つからない（webフレーバーでは必須）"
-fi
-say ""
+
+  say "--- $(basename "$APK") ---"
+
+  say "[1] 権限の実測"
+  PERMISSIONS="$("$AAPT2" dump permissions "$APK")"
+  for perm in "${FORBIDDEN_PERMISSIONS[@]}"; do
+    if printf '%s' "$PERMISSIONS" | grep -q "$perm"; then
+      ng "$perm を保持している（OCR専用ビルドでは保持してはならない）"
+    else
+      ok "$perm を保持していない"
+    fi
+  done
+  say ""
+  say "  APKが宣言する全権限:"
+  printf '%s\n' "$PERMISSIONS" | grep "uses-permission" | sed 's/^/    /'
+  say ""
+
+  say "[2] 平文通信の禁止設定"
+  if "$AAPT2" dump xmltree "$APK" --file res/xml/network_security_config.xml >/dev/null 2>&1; then
+    NSC="$("$AAPT2" dump xmltree "$APK" --file res/xml/network_security_config.xml 2>/dev/null)"
+    if printf '%s' "$NSC" | grep -q 'cleartextTrafficPermitted.*0xffffffff'; then
+      info "一部ドメインで平文通信が許可されている（社内検証用ループバックの想定。運用ビルドでは外すこと）"
+    fi
+    ok "ネットワークセキュリティ設定が同梱されている"
+  else
+    info "ネットワークセキュリティ設定が見つからない（webフレーバーでは必須）"
+  fi
+  say ""
+done
 
 say "[3] 判定"
 if [ "$fail" -eq 0 ]; then
