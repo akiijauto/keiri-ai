@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/slo/slo-handoff-v1.schema.json",
+  "title": "SLO Handoff Envelope v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "handoff_id", "issued_at", "expires_at", "document_type", "profile", "source", "confirmed", "fields"],
+  "properties": {
+    "protocol": { "const": "slo-handoff/1.0" },
+    "handoff_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "document_type": {
+      "type": "string",
+      "enum": ["residency_application", "contact_registration", "generic"]
+    },
+    "profile": { "type": "string", "pattern": "^[a-z0-9.]+/[0-9]+$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "app", "version"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["ondevice-ocr", "web-form", "manual"] },
+        "app": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "engine": { "type": "string", "enum": ["mlkit-ja-on-device", "apple-vision", "none"] },
+        "offline_capture": { "type": "boolean" }
+      }
+    },
+    "confirmed": { "const": true },
+    "fields": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "origin", "confidence", "edited", "confirmed"],
+        "properties": {
+          "value": { "type": "string", "maxLength": 256 },
+          "origin": { "type": "string", "enum": ["ocr", "manual", "web-form"] },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "edited": { "type": "boolean" },
+          "confirmed": { "const": true }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "key_id", "value"],
+      "properties": {
+        "alg": { "const": "HMAC-SHA256" },
+        "key_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+      }
+    }
+  }
+}

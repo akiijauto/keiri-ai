@@ -1,0 +1,17 @@
+# ビルド成果物
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/.idea/
+ios/build/
+ios/*.xcodeproj/xcuserdata/
+web/node_modules/
+web/.playwright/
+*.apk
+*.aab
+
+# 実データが混入しないよう、撮影画像・OCR出力は一切追跡しない（企画書 25）
+**/captures/
+**/*.ocr.json
+**/personal-*.json
