@@ -87,6 +87,10 @@ fun CaptureScreen(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         val previewView = PreviewView(ctx)
+                        // 既定の FILL_CENTER はセンサー画像を切り詰めて画面を埋めるため、
+                        // 画面に見えている範囲と実際に撮影される範囲がずれる。
+                        // 枠に収めたつもりが写っていない、という事故を避けるため全体を表示する。
+                        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
                         val providerFuture = ProcessCameraProvider.getInstance(ctx)
                         providerFuture.addListener({
                             val provider = providerFuture.get()
@@ -130,7 +134,8 @@ fun CaptureScreen(
                 Text(statusMessage, style = MaterialTheme.typography.bodySmall)
             }
             Text(
-                "枠の中に書類を収めて撮影してください。撮影画像は保存されません。",
+                "書類が画面いっぱいになるよう近づけて撮影してください。" +
+                    "枠は目安です（画像全体を読み取ります）。撮影画像は保存されません。",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(bottom = 8.dp)
             )

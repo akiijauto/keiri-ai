@@ -1,5 +1,6 @@
 package jp.slo.android
 
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
@@ -20,6 +21,7 @@ import jp.slo.android.security.DeviceIntegrity
 import jp.slo.android.ui.CaptureScreen
 import jp.slo.android.ui.HandoffScreen
 import jp.slo.android.ui.LockScreen
+import jp.slo.android.ui.OcrDebugScreen
 import jp.slo.android.ui.ReviewScreen
 import jp.slo.android.ui.SessionViewModel
 import jp.slo.android.ui.SloTheme
@@ -44,6 +46,9 @@ class MainActivity : FragmentActivity() {
     private var handoffSession: HandoffSession? = null
     private var bridge: SloWebViewBridge? = null
     private var lastInteractionAt = 0L
+
+    /** これ未満の行数しか読めなかったら、補正をかけて読み直す。 */
+    private val MIN_ACCEPTABLE_LINES = 3
 
     /**
      * 登録先の業務Webサイトと許可オリジン。
@@ -114,7 +119,12 @@ class MainActivity : FragmentActivity() {
                             touch()
                             vm.discard()
                         },
-                        onDiscard = { endSession("discarded_by_user") }
+                        onDiscard = { endSession("discarded_by_user") },
+                        onInspectOcr = if (BuildConfig.DEBUG) {
+                            { vm.goTo(SessionViewModel.Step.OCR_DEBUG) }
+                        } else {
+                            null
+                        }
                     )
 
                     SessionViewModel.Step.HANDOFF -> HandoffScreen(
@@ -137,6 +147,12 @@ class MainActivity : FragmentActivity() {
                         message = "セッションを終了しました。データは破棄済みです。",
                         onUnlock = { vm.goTo(SessionViewModel.Step.CAPTURE) },
                         onVerify = { vm.goTo(SessionViewModel.Step.VERIFY) }
+                    )
+
+                    SessionViewModel.Step.OCR_DEBUG -> OcrDebugScreen(
+                        lines = vm.ocrLines,
+                        elapsedMillis = vm.lastOcrElapsedMillis,
+                        onBack = { vm.goTo(SessionViewModel.Step.REVIEW) }
                     )
 
                     SessionViewModel.Step.VERIFY -> VerifyScreen(
@@ -166,16 +182,25 @@ class MainActivity : FragmentActivity() {
     /**
      * 撮影 → 画像補正 → OCR → 項目抽出。すべて端末内で完結する。
      * 原画像はこのメソッドを抜けるまでに破棄する（企画書 12）。
+     *
+     * 切り出しは行わない。プレビュー上のガイド枠と撮影画像の座標系が一致しないため、
+     * 枠に合わせて切り出すと実際には別の領域を切り取ってしまう（ImagePrep 参照）。
+     * 画像全体をOCRへ渡し、ガイド枠は構図の目安に留める。
      */
     private fun handleCapture(image: ImageProxy) {
         auditLog.add(AuditLog.Event.CAPTURE_STARTED)
         val rotation = image.imageInfo.rotationDegrees
-        val prepared = runCatching {
-            ImagePrep.prepare(image.toBitmap(), rotation, ImagePrep.RelativeRect.DOCUMENT_GUIDE)
-        }.getOrNull()
+        val captured = runCatching { image.toBitmap() }.getOrNull()
         image.close()
 
-        if (prepared == null) {
+        val rotated = captured?.let { raw ->
+            runCatching {
+                ImagePrep.applyRotation(raw, rotation).also { if (it !== raw) raw.recycle() }
+            }.getOrNull()
+        }
+
+        if (rotated == null) {
+            captured?.recycle()
             runOnUiThread {
                 auditLog.add(AuditLog.Event.OCR_FAILED, mapOf("reason" to "E_IMAGE_PREP"))
                 vm.statusMessage = "画像の前処理に失敗しました。撮り直してください。"
@@ -186,26 +211,22 @@ class MainActivity : FragmentActivity() {
         runOnUiThread { vm.goTo(SessionViewModel.Step.OCR) }
         auditLog.add(AuditLog.Event.OCR_START, mapOf("engine" to "mlkit-ja-on-device"))
 
+        // 1回目は補正なしで読む。ML Kit は自然な写真を前提に学習されており、
+        // 素朴なコントラスト強調はかえって不利に働くことがある。
         ocr.recognize(
-            bitmap = prepared,
-            onResult = { result ->
-                prepared.recycle() // 画像はここで破棄。以降どこにも残さない。
-                val extracted = Extractor.extract(result.lines, vm.documentType)
-                runOnUiThread {
-                    auditLog.add(
-                        AuditLog.Event.OCR_SUCCESS,
-                        mapOf("count" to result.lineCount.toString(), "elapsed_ms" to result.elapsedMillis.toString())
-                    )
-                    auditLog.add(AuditLog.Event.EXTRACT_DONE, AuditLog.fieldKeysAttribute(extracted.keys))
-                    vm.markOfflineCapture(isAirplaneModeOn() || !BuildConfig.WEB_HANDOFF_ENABLED)
-                    vm.loadExtracted(extracted, result.elapsedMillis, result.lineCount)
-                    vm.statusMessage = null
-                    vm.goTo(SessionViewModel.Step.REVIEW)
-                    touch()
+            bitmap = rotated,
+            onResult = { plain ->
+                if (plain.lineCount >= MIN_ACCEPTABLE_LINES) {
+                    rotated.recycle()
+                    finishOcr(plain)
+                } else {
+                    // 読めた行が少なすぎる場合だけ、補正をかけて読み直す。
+                    // 薄い印字や陰のある紙ではこちらが効く。
+                    retryWithEnhancement(rotated, plain)
                 }
             },
             onError = { code ->
-                prepared.recycle()
+                rotated.recycle()
                 runOnUiThread {
                     auditLog.add(AuditLog.Event.OCR_FAILED, mapOf("reason" to code))
                     vm.statusMessage = "文字を認識できませんでした（$code）。明るさと角度を変えて撮り直してください。"
@@ -213,6 +234,55 @@ class MainActivity : FragmentActivity() {
                 }
             }
         )
+    }
+
+    /**
+     * 補正をかけて読み直し、行数が多いほうの結果を採用する。
+     * どちらでも読めなければ、そのことが分かるように0行の結果を返す。
+     */
+    private fun retryWithEnhancement(source: Bitmap, plain: OnDeviceOcr.Result) {
+        val enhanced = runCatching { ImagePrep.enhance(source) }.getOrNull()
+        if (enhanced == null) {
+            source.recycle()
+            finishOcr(plain)
+            return
+        }
+        ocr.recognize(
+            bitmap = enhanced,
+            onResult = { boosted ->
+                source.recycle()
+                enhanced.recycle()
+                finishOcr(if (boosted.lineCount > plain.lineCount) boosted else plain)
+            },
+            onError = {
+                source.recycle()
+                enhanced.recycle()
+                finishOcr(plain)
+            }
+        )
+    }
+
+    /** OCR結果から項目を抽出し、確認画面へ進む。 */
+    private fun finishOcr(result: OnDeviceOcr.Result) {
+        val extracted = Extractor.extract(result.lines, vm.documentType)
+        runOnUiThread {
+            auditLog.add(
+                AuditLog.Event.OCR_SUCCESS,
+                mapOf("count" to result.lineCount.toString(), "elapsed_ms" to result.elapsedMillis.toString())
+            )
+            auditLog.add(AuditLog.Event.EXTRACT_DONE, AuditLog.fieldKeysAttribute(extracted.keys))
+            vm.markOfflineCapture(isAirplaneModeOn() || !BuildConfig.WEB_HANDOFF_ENABLED)
+            vm.loadExtracted(extracted, result.elapsedMillis, result.lineCount)
+            // 読み取った行そのものは、デバッグビルドでのみ画面確認用に保持する（保存はしない）
+            vm.setOcrLines(if (BuildConfig.DEBUG) result.lines else emptyList())
+            vm.statusMessage = if (result.lineCount == 0) {
+                "文字を認識できませんでした。明るさ・角度・距離を変えて撮り直してください。"
+            } else {
+                null
+            }
+            vm.goTo(SessionViewModel.Step.REVIEW)
+            touch()
+        }
     }
 
     /** 確認済みの項目を持って、Web入力フェーズ（Phase B）へ移る。 */

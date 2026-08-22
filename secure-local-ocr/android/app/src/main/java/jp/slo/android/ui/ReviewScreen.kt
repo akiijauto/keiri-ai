@@ -33,7 +33,8 @@ fun ReviewScreen(
     vm: SessionViewModel,
     onProceed: () -> Unit,
     onRetake: () -> Unit,
-    onDiscard: () -> Unit
+    onDiscard: () -> Unit,
+    onInspectOcr: (() -> Unit)? = null
 ) {
     val missing = vm.missingRequired()
 
@@ -80,6 +81,10 @@ fun ReviewScreen(
             Button(onClick = onProceed, enabled = vm.canHandoff()) { Text("Web入力へ進む") }
             OutlinedButton(onClick = onRetake) { Text("撮り直す") }
             OutlinedButton(onClick = onDiscard) { Text("破棄") }
+            // 抽出結果だけでは「読めていない」のか「読めたが結びつかない」のか分からない
+            if (onInspectOcr != null) {
+                OutlinedButton(onClick = onInspectOcr) { Text("読み取った行") }
+            }
         }
     }
 }

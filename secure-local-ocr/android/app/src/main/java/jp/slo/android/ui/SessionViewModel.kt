@@ -18,7 +18,7 @@ import jp.slo.core.Profile
  */
 class SessionViewModel : ViewModel() {
 
-    enum class Step { LOCKED, CAPTURE, OCR, REVIEW, HANDOFF, DONE, VERIFY }
+    enum class Step { LOCKED, CAPTURE, OCR, REVIEW, HANDOFF, DONE, VERIFY, OCR_DEBUG }
 
     data class EditableField(
         val key: String,
@@ -52,6 +52,20 @@ class SessionViewModel : ViewModel() {
         private set
 
     val fields = mutableStateListOf<EditableField>()
+
+    /**
+     * OCRが読み取った行そのもの。
+     *
+     * 抽出がうまくいかなかったとき、原因が「読めていない」のか
+     * 「読めているが項目に結びつけられていない」のかを切り分けるために必要。
+     * 保持するのはデバッグビルドのみで、ディスクにも監査ログにも書かない。
+     */
+    val ocrLines = mutableStateListOf<Extractor.Line>()
+
+    fun setOcrLines(lines: List<Extractor.Line>) {
+        ocrLines.clear()
+        ocrLines.addAll(lines)
+    }
 
     fun goTo(next: Step) {
         step = next
@@ -151,6 +165,7 @@ class SessionViewModel : ViewModel() {
     /** セッション終了。項目値をメモリから落とす。 */
     fun discard() {
         fields.clear()
+        ocrLines.clear()
         statusMessage = null
         lastOcrElapsedMillis = 0
         ocrLineCount = 0
