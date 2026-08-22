@@ -170,6 +170,9 @@ test('失効したEnvelopeは拒否され、入力欄は空のまま', async () 
   });
   await signEnvelope(env, 'session:test', key);
 
+  // ページのモジュールは mapping.json を待ってからブリッジを設置する。
+  // 設置前に呼ぶと window.SLO が未定義になるため、必ず待つ。
+  await page.waitForFunction(() => Boolean(window.SLO));
   await page.evaluate(async (envelope) => {
     await window.SLO._deliver(envelope);
   }, env);
@@ -193,6 +196,7 @@ test('値を改ざんしたEnvelopeは正規化の再計算で拒否される', 
   });
   env.fields.phone.value = '0901234567X'; // 正規形ではない値に差し替え
 
+  await page.waitForFunction(() => Boolean(window.SLO));
   await page.evaluate(async (envelope) => { await window.SLO._deliver(envelope); }, env);
   await page.waitForFunction(() => document.getElementById('banner').textContent.includes('E_VALIDATION'));
   assert.equal(await page.inputValue('#tel1'), '');

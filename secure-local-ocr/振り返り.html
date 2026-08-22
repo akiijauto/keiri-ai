@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>振り返り — Secure Local OCR</title>
+<link rel="stylesheet" href="docs/doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>振り返り</h1>
+  <div class="meta">Secure Local OCR ／ 初期開発（Phase 0 〜 Phase 2 相当）／ 2026-08-22</div>
+  <nav>
+    <a href="README.html">README</a>
+    <a href="要件定義.html">要件定義</a>
+    <a href="docs/architecture.html">アーキテクチャ</a>
+    <a href="docs/security-design.html">セキュリティ設計</a>
+    <a href="docs/threat-model.html">脅威モデル</a>
+    <a href="docs/test-plan.html">テスト計画</a>
+  </nav>
+</header>
+
+<main>
+
+<section>
+  <h2>この文書の目的</h2>
+  <p>
+    開発中に実際に起きた問題と、その原因・調査・解決・再発防止策を残します。
+    「うまくいった話」ではなく「詰まった話」を書きます。次に同じ場所で止まらないためです。
+  </p>
+</section>
+
+<section>
+  <h2>やったこと・やっていないこと</h2>
+  <table>
+    <thead><tr><th>項目</th><th>状態</th></tr></thead>
+    <tbody>
+      <tr><td>受け渡しプロトコルの仕様・スキーマ・共通テストベクタ</td><td><span class="badge ok">完了</span></td></tr>
+      <tr><td>共有コア（Kotlin / JavaScript / Swift）</td><td><span class="badge ok">実装完了</span>（Swiftのみ未実行）</td></tr>
+      <tr><td>Androidアプリ（撮影〜OCR〜確認〜Web入力支援）</td><td><span class="badge ok">ビルド成功</span></td></tr>
+      <tr><td>Web（登録先サイト・入居フォーム・ブリッジ）</td><td><span class="badge ok">E2E成功</span></td></tr>
+      <tr><td>通信分離のビルド時検証</td><td><span class="badge ok">自動化済</span></td></tr>
+      <tr><td>iOSアプリのビルド・実行</td><td><span class="badge ng">未実施</span>（macOS不在）</td></tr>
+      <tr><td>実端末でのOCR精度・速度の検証</td><td><span class="badge ng">未実施</span>（実端末不在）</td></tr>
+      <tr><td>実端末での通信監視（pcap）</td><td><span class="badge ng">未実施</span>（実端末不在）</td></tr>
+      <tr><td>手書き文字の精度検証</td><td><span class="badge ng">未実施</span>（MVP対象外）</td></tr>
+    </tbody>
+  </table>
+  <div class="callout danger">
+    <strong>MVPはまだ「合格」ではありません。</strong>
+    企画書の合格条件は「実測で通信がないことを確認する」ことを含みます。
+    実端末が用意でき次第、<a href="docs/test-plan.html">テスト計画</a> の手順を実行してください。
+    それまでは「実装完了・実機未検証」と表現すべきです。
+  </div>
+</section>
+
+<section>
+  <h2>課題1: 通信権限が、宣言していないのに混入していた</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    OCR専用の <code>offline</code> フレーバーは「INTERNET権限を持たない」ことを設計の柱にしていました。
+    マニフェストに <code>&lt;uses-permission android:name="android.permission.INTERNET"/&gt;</code> を
+    書かなければ済むはずでした。ビルドしたAPKを実測すると、こうなっていました。
+  </p>
+<pre><code>$ aapt2 dump permissions app-offline-debug.apk
+package: jp.slo.android.offline
+uses-permission: name='android.permission.CAMERA'
+uses-permission: name='android.permission.USE_BIOMETRIC'
+uses-permission: name='android.permission.ACCESS_NETWORK_STATE'
+uses-permission: name='android.permission.INTERNET'      &lt;-- 持っている</code></pre>
+
+  <h4>原因</h4>
+  <p>
+    Androidのマニフェストマージャは、依存ライブラリのマニフェストを自動的に取り込みます。
+    ML Kit が依存する Google Play services 系のライブラリが
+    <code>INTERNET</code> と <code>ACCESS_NETWORK_STATE</code> を宣言しており、
+    それがアプリのマニフェストへ合流していました。
+    <strong>「書かなければ付かない」は誤りでした。</strong>
+  </p>
+
+  <h4>解決</h4>
+  <p>フレーバー側のマニフェストで明示的に取り除きます。</p>
+<pre><code>&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"&gt;
+    &lt;uses-permission android:name="android.permission.INTERNET" tools:node="remove" /&gt;
+    &lt;uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" /&gt;
+&lt;/manifest&gt;</code></pre>
+
+  <h4>再発防止</h4>
+  <p>
+    Gradleタスク <code>:app:verifyOfflineFlavorHasNoInternet</code> を追加し、
+    <strong>生成されたAPKそのもの</strong>を毎回 aapt2 で検査して、
+    権限があればビルドを失敗させるようにしました。
+  </p>
+
+  <h4>学び</h4>
+  <blockquote>
+    セキュリティの主張は、ソースコードではなく成果物に対して検証する。
+    「そう書いたつもり」と「そうなっている」は別物で、今回はまさに食い違っていた。
+    この1件だけで、原則8（実測して検証する）を仕組みにした価値があった。
+  </blockquote>
+</section>
+
+<section>
+  <h2>課題2: 検証タスクが、古いAPKを見て「合格」と言いかけた</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    課題1の修正後、<code>gradle :app:assembleOfflineDebug :app:verifyOfflineFlavorHasNoInternet</code>
+    を実行したところ、修正が効いているはずなのに失敗しました。
+    マージ後のマニフェストを確認すると <code>INTERNET</code> は消えていました。
+  </p>
+
+  <h4>原因</h4>
+  <p>
+    検証タスクに <code>dependsOn</code> を書いていなかったため、
+    Gradleがタスクの実行順を保証せず、<strong>前回ビルドの古いAPK</strong>を検査していました。
+    今回はたまたま「誤って不合格」でしたが、順序が逆なら
+    <strong>「修正前のAPKを検査して合格と言う」</strong>ことも起こり得ました。そちらの方が危険です。
+  </p>
+
+  <h4>解決</h4>
+<pre><code>val verifyOfflineFlavorHasNoInternet by tasks.registering {
+    // 検証対象は「実際にパッケージされたAPK」。必ず先にビルドさせる。
+    dependsOn("assembleOfflineDebug")
+    ...
+}</code></pre>
+
+  <h4>学び</h4>
+  <blockquote>
+    検証タスクは、検証対象の生成に必ず依存させる。
+    そうでない検証は、静かに古い証跡を承認してしまう。
+  </blockquote>
+</section>
+
+<section>
+  <h2>課題3: CSPを厳しくしたら、自分のページが動かなくなった</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    登録先サイトのブラウザE2Eで、6件中4件が失敗しました。
+    エラーは <code>Cannot read properties of undefined (reading '_deliver')</code>。
+    つまり <code>window.SLO</code> が生えていない。
+  </p>
+
+  <h4>原因</h4>
+  <p>
+    許可リスト方式の実例として、開発サーバに
+    <code>script-src 'self'</code> を含むCSPを付けていました。
+    一方でページ側は <code>&lt;script type="module"&gt;...&lt;/script&gt;</code> と
+    インラインで書いていたため、<strong>CSPが正しく仕事をして</strong>ブロックしていました。
+    同様に <code>style="margin-top:14px"</code> というインラインstyle属性も
+    <code>style-src 'self'</code> に弾かれていました。
+  </p>
+
+  <h4>解決</h4>
+  <p>
+    ページのスクリプトを <code>app.js</code> として外部ファイル化し、インラインstyleはクラスに置き換えました。
+    <code>'unsafe-inline'</code> を足してCSPを緩める選択はしていません。
+    緩めれば、この仕組みが守ろうとしているものが減ります。
+  </p>
+
+  <h4>再発防止</h4>
+  <p>
+    E2Eテストに「CSPヘッダが <code>default-src 'self'</code> と <code>connect-src 'self'</code> を
+    含むこと」を確認する項目を入れました。CSPが緩められたら、テストが落ちます。
+  </p>
+
+  <h4>学び</h4>
+  <blockquote>
+    セキュリティ設定でテストが落ちたとき、最初に疑うべきは設定ではなく実装のほう。
+    「テストを通すために設定を緩める」を1回でも許すと、あとは坂道になる。
+    登録先サイトに組み込む側も同じ壁に当たるので、READMEに明記した。
+  </blockquote>
+</section>
+
+<section>
+  <h2>課題4: 3言語で同じ結果を出すのは、思ったより難しい</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    正規化規則を Kotlin・JavaScript・Swift の3つで実装する設計にしました。
+    ここでずれると、取込元が「正しい」と判断した値を登録先が「不正」と拒否します。
+    机上のレビューではずれを見つけられません。
+  </p>
+
+  <h4>具体的にずれやすかった点</h4>
+  <table>
+    <thead><tr><th>論点</th><th>ずれの内容</th><th>対処</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>数値の文字列表現</td>
+        <td><code>1.0</code> を Kotlin は <code>"1.0"</code>、JavaScript は <code>"1"</code> と書く。
+            HMACの対象文字列が変わるので署名が一致しない</td>
+        <td>正準化の規則で「整数値は小数点なし」と固定し、3実装に同じ関数を置いた</td>
+      </tr>
+      <tr>
+        <td>キーの並び順</td>
+        <td>言語ごとの既定のソートが必ずしもUTF-16コードユニット順ではない</td>
+        <td>比較関数を自前で実装し、ベクタで検証</td>
+      </tr>
+      <tr>
+        <td>閏年・和暦</td>
+        <td>標準の日付ライブラリはタイムゾーンやロケールの影響を受ける</td>
+        <td>日付型を自前で持ち、閏年判定と和暦換算を3実装で同じコードにした</td>
+      </tr>
+      <tr>
+        <td>全角スペースの扱い</td>
+        <td>「空白文字」の定義が言語ごとに違う（U+3000を含むか）</td>
+        <td>対象文字を明示列挙し、正規表現の <code>\s</code> に頼らない</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4>解決</h4>
+  <p>
+    <code>protocol/testdata/</code> に共通テストベクタを置き、3実装すべてがこれを読むようにしました。
+    さらに正準化/HMACのベクタは<strong>第4の実装（Python）</strong>で生成しています。
+    3実装が同じ勘違いを共有していても、Python生成のベクタとは合いません。
+  </p>
+
+  <h4>学び</h4>
+  <blockquote>
+    「同じ仕様で実装する」だけでは同じにならない。同じ入力に対する同じ出力を、
+    実行可能な形で共有して初めて揃う。
+    ベクタが落ちたら、ベクタではなく実装を直す。この順序を守れるかがすべて。
+  </blockquote>
+</section>
+
+<section>
+  <h2>課題5: 和暦とOCR誤読補正の適用順序</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    OCRは数字を読み違えます。<code>0</code>を<code>O</code>、<code>1</code>を<code>I</code>、
+    <code>5</code>を<code>S</code>と読むことがよくあるので、
+    数字が期待される場所ではこれを補正します。
+  </p>
+  <p>
+    ところが日付には和暦があります。<code>S55.1.1</code>（昭和55年1月1日）に
+    素直に補正をかけると <code>555.1.1</code> になり、日付として読めなくなります。
+    <code>H</code>（平成）<code>R</code>（令和）<code>M</code>（明治）<code>T</code>（大正）も同様の危険があります。
+  </p>
+
+  <h4>解決</h4>
+  <p>
+    順序を決めました。<strong>まず和暦として解釈を試み、失敗した場合に限って数字補正をかける。</strong>
+  </p>
+<pre><code>ERA_RE.find(raw)?.let { ... }          // 先に和暦を試す
+val fixed = Text.fixOcrDigits(raw)     // 読めなかったときだけ補正
+WESTERN_RE.find(fixed)?.let { ... }</code></pre>
+  <p>
+    ベクタには <code>S55.1.1 → 1980-01-01</code> と
+    <code>198O/O1/O1 → 1980-01-01</code> の両方を入れ、
+    どちらかを壊す変更をしたらテストが落ちるようにしました。
+  </p>
+
+  <h4>学び</h4>
+  <blockquote>
+    「賢い補正」は、別の正しい入力を壊す。補正には必ず適用範囲を決め、
+    その境界をテストで固定する。氏名や住所に数字補正をかけないのも同じ理由。
+  </blockquote>
+</section>
+
+<section>
+  <h2>課題6: Kotlinのブロックコメントは入れ子になる</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    テストのドキュメントコメントに <code>protocol/testdata/*.json</code> と書いたところ、
+    <code>Syntax error: Unclosed comment</code> でコンパイルが落ちました。エラー位置はファイル末尾で、
+    原因箇所を指していません。
+  </p>
+
+  <h4>原因</h4>
+  <p>
+    Kotlinのブロックコメントは入れ子を許します。コメント内の <code>/*</code>（<code>testdata/*</code> の部分）が
+    新しいコメントの開始と解釈され、閉じ括弧が1つ足りなくなっていました。
+    C系言語の感覚だと気づきにくい挙動です。
+  </p>
+
+  <h4>解決</h4>
+  <p>コメント中のパス表記からワイルドカードを外しました（<code>protocol/testdata 配下</code>）。</p>
+
+  <h4>学び</h4>
+  <blockquote>
+    「Unclosed comment」がファイル末尾で出たら、コメント内の <code>/*</code> を疑う。
+    ドキュメントコメントにglobパターンを書かない。
+  </blockquote>
+</section>
+
+<section>
+  <h2>課題7: KotlinのプロパティとメソッドのJVMシグネチャ衝突</h2>
+
+  <h4>何が起きたか</h4>
+<pre><code>var offlineCapture by mutableStateOf(true)
+    private set
+
+fun setOfflineCapture(offline: Boolean) { ... }   // Platform declaration clash</code></pre>
+  <p>
+    <code>var offlineCapture</code> はJVM上で <code>setOfflineCapture(Z)V</code> を生成するため、
+    同名のメソッドと衝突しました。
+  </p>
+
+  <h4>解決</h4>
+  <p>
+    メソッド名を <code>markOfflineCapture</code> に変更。
+    「setterを private にしつつ、限定された経路でだけ更新させたい」意図も名前で表現できました。
+  </p>
+</section>
+
+<section>
+  <h2>課題8: Composeの <code>weight</code> を import してしまった</h2>
+  <p>
+    <code>androidx.compose.foundation.layout.weight</code> を import したところ
+    <code>Cannot access ... it is internal in file</code> でコンパイルエラー。
+    <code>weight</code> は <code>RowScope</code> / <code>ColumnScope</code> の拡張なので import 不要でした。
+    IDEの自動importに任せると、同名の internal 宣言を拾うことがあります。
+  </p>
+</section>
+
+<section>
+  <h2>課題9: OCRの信頼度が端末によっては返らない</h2>
+  <p>
+    ML Kit の <code>Text.Line.confidence</code> は、端末やモデルの版によって値を返しません。
+    非null前提で書くと落ちる可能性があり、かといって <code>?.</code> を付けると
+    プラットフォーム型の扱いで警告になります。
+  </p>
+<pre><code>// 返らない場合は 1.0 として扱う。キャストで安全に受ける。
+val confidence = (line.confidence as? Float)?.toDouble() ?: 1.0</code></pre>
+  <p>
+    そのうえで、確認画面は「信頼度 高／中／低」と<strong>言葉</strong>で表示しています。
+    数値を出しても人間の判断材料になりにくく、値の欠落に意味を与えすぎるためです。
+  </p>
+</section>
+
+<section>
+  <h2>課題10: E2Eテストが5回に1回落ちた</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    全テストを通し直したところ、直前まで安定していた「改ざんEnvelopeの拒否」テストが1回だけ失敗しました。
+    同じテストを3回続けて流すと3回とも成功します。典型的な不安定テストです。
+  </p>
+
+  <h4>原因</h4>
+  <p>
+    登録先ページのスクリプトは、マッピング定義を <code>await fetch()</code> で読んでから
+    ブリッジを設置します。テスト側はページを開いた直後に <code>window.SLO._deliver()</code> を呼ぶため、
+    <strong>設置が間に合わないと <code>window.SLO</code> が未定義</strong>になります。
+    失効テストのほうは、直前でEnvelopeへの署名（非同期処理）を待つぶん時間が稼げていて、
+    たまたま表面化していませんでした。
+  </p>
+
+  <h4>解決</h4>
+<pre><code>await page.waitForFunction(() =&gt; Boolean(window.SLO));
+await page.evaluate(async (envelope) =&gt; { await window.SLO._deliver(envelope); }, env);</code></pre>
+  <p>修正後、5回連続で全件成功することを確認しました。</p>
+
+  <h4>学び</h4>
+  <blockquote>
+    セキュリティの拒否条件を確かめるテストが不安定なのは、特に危険。
+    「たまに落ちるやつ」として放置されると、本当に拒否できなくなった日にも
+    同じ扱いで見過ごされる。落ちた回数が少ないうちに原因を突き止めておく。
+  </blockquote>
+  <p>
+    なお、この不具合はテスト側だけの問題で、製品コードの動作には影響しません。
+    ただし「ブリッジの設置は非同期である」という事実は、
+    登録先サイトへ組み込む側にも影響するため、READMEに書いておくべき性質のものです。
+  </p>
+</section>
+
+<section>
+  <h2>設計判断の記録</h2>
+
+  <h3>なぜ通信の有無を「ビルド構成」で分けたか</h3>
+  <p>
+    「OCR中は通信しない」をコードで守ろうとすると、レビューし続けるしかありません。
+    権限を持たないビルドを用意すれば、OSが強制します。守り方の強さが違います。
+    <code>offline</code> / <code>web</code> の2フレーバーにしたのはそのためです。
+  </p>
+
+  <h3>なぜ外部ライブラリを使わずJSONを自作したか</h3>
+  <p>理由は2つあります。</p>
+  <ul>
+    <li>OCRフェーズで動くコードの依存を最小にし、意図しない通信を行うSDKの混入余地を減らすため</li>
+    <li>正準化の出力を3実装でバイト単位に揃えるには、直列化を自分で制御する必要があったため</li>
+  </ul>
+  <p>課題1で見たとおり、依存は勝手に権限を持ち込みます。依存を1つ減らすことには意味がありました。</p>
+
+  <h3>なぜ入居フォーム（Web入力）も同じEnvelopeに載せたか</h3>
+  <p>
+    登録先の受け口を1つに保つためです。取込元ごとに受け口を作ると、
+    検証の抜けが取込元の数だけ増えます。
+    OCR由来かWeb入力由来かは <code>source.kind</code> と <code>origin</code> の違いだけで、
+    正規化も検証も監査ログも共通の経路を通ります。
+  </p>
+
+  <h3>なぜ完全自動送信を実装しないか</h3>
+  <p>
+    OCRは必ず間違えます。間違いを人間が見つけられる場所は、送信ボタンの手前しかありません。
+    自動送信を1つ足すと、その安全網が丸ごと無くなります。
+    ブリッジには送信ボタンを押す経路自体を作っていません。
+  </p>
+</section>
+
+<section>
+  <h2>次にやること</h2>
+  <ol>
+    <li><strong>実端末でのOCR精度検証。</strong>実際の帳票（架空データで印刷したもの）で、
+        必須項目が取れるかを確認する。ここで駄目なら項目抽出の規則を見直す</li>
+    <li><strong>通信監視の実測。</strong><code>tools/analyze_pcap.py</code> は合成pcapで動作確認済み。
+        実端末の捕捉結果を通して合格を記録する</li>
+    <li><strong>処理速度の計測。</strong>撮影からOCR結果表示まで3秒以内という目標の妥当性を確認する</li>
+    <li><strong>iOS版のビルドとテスト。</strong>macOS環境で <code>swift test</code> と実機動作を確認する</li>
+    <li><strong>対象Webサイトの調査。</strong>実際の入力欄・認証・CDN・CAPTCHAを調べ、
+        マッピング定義と許可リストを確定する</li>
+    <li><strong>ML Kitの挙動確認。</strong>INTERNET権限が無い状態でOCRが正常に動くことを実機で確認する。
+        モデルは同梱なので動くはずだが、<strong>これは実測すべき前提</strong>である</li>
+  </ol>
+</section>
+
+<section>
+  <h2>次回の開発で使える知識</h2>
+  <ul>
+    <li>Androidの権限は、依存ライブラリから勝手に増える。APKを実測して確認する</li>
+    <li>検証タスクは検証対象の生成に依存させる。さもないと古い証跡を承認する</li>
+    <li>厳しいCSPを入れるなら、インラインの script と style 属性は最初から使わない</li>
+    <li>複数言語で同じ判定を行うなら、共通テストベクタを最初に作る。実装より先に作る</li>
+    <li>ベクタは、実装とは独立した第4の手段で生成すると、共通の勘違いを検出できる</li>
+    <li>文字列の補正処理は、必ず適用範囲を決めて境界をテストで固定する</li>
+    <li>Kotlinのブロックコメントは入れ子になる。コメントに <code>/*</code> を書かない</li>
+    <li>「実装完了」と「実機検証済み」を混同しない。文書上でも区別して書く</li>
+  </ul>
+</section>
+
+</main>
+<footer class="doc">
+  Secure Local OCR 振り返り ／ 本書に登場する個人情報はすべて架空のものです。
+</footer>
+</body>
+</html>

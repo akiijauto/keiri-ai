@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アーキテクチャ — Secure Local OCR</title>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>アーキテクチャ</h1>
+  <div class="meta">Secure Local OCR ／ 版 0.1</div>
+  <nav>
+    <a href="../README.html">README</a>
+    <a href="../要件定義.html">要件定義</a>
+    <a href="../振り返り.html">振り返り</a>
+    <a href="security-design.html">セキュリティ設計</a>
+    <a href="threat-model.html">脅威モデル</a>
+    <a href="test-plan.html">テスト計画</a>
+  </nav>
+</header>
+
+<main>
+
+<section>
+  <h2>1. 全体像</h2>
+<pre class="diagram">┌──────────────── 端末（Android / iPhone / iPad）─────────────────┐
+│                                                                  │
+│  Phase A: OCRフェーズ（通信なし）                                 │
+│  ┌────────┐   ┌──────────┐   ┌────────┐   ┌──────────┐          │
+│  │ カメラ  │→ │ 画像補正  │→ │  OCR   │→ │ 項目抽出  │          │
+│  │CameraX │   │端末内処理 │   │端末内  │   │ルール処理 │          │
+│  │VisionKit│  │          │   │モデル  │   │          │          │
+│  └────────┘   └──────────┘   └────────┘   └─────┬────┘          │
+│       画像はメモリ上のみ。OCR直後に破棄               │              │
+│                                                     ▼              │
+│                                          ┌────────────────┐        │
+│                                          │ 確認・修正画面  │        │
+│                                          │ 人間が1項目ずつ │        │
+│                                          │ 確認する        │        │
+│                                          └────────┬───────┘        │
+│  ─────────────────────────────────────────────────┼─────────────  │
+│  Phase B: Web登録フェーズ（許可リストへのみ通信）    │              │
+│                                          ┌─────────▼──────┐        │
+│                                          │ Envelope 生成   │        │
+│                                          │ + HMAC署名      │        │
+│                                          └─────────┬──────┘        │
+│                                                    │               │
+│                                     ┌──────────────▼────────────┐  │
+│                                     │ WebView（登録先サイト）    │  │
+│                                     │ slo-bridge.js が検証・充填 │  │
+│                                     │ 送信ボタンは人間が押す      │  │
+│                                     └───────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+                                                    │
+                                       許可リストのドメインのみ
+                                                    ▼
+                                        ┌────────────────────┐
+                                        │ 業務Webサイト        │
+                                        └────────────────────┘</pre>
+</section>
+
+<section>
+  <h2>2. 取込元が複数あっても、受け口は1つ</h2>
+<pre class="diagram">取込元A                        取込元B                    取込元C
+OCRアプリ                      入居フォーム                職員の手入力
+(Android/iOS)                  (Web)                      (アプリ内)
+    │                              │                          │
+    │ 撮影→OCR→抽出                │ 直接入力                  │ 直接入力
+    │                              │                          │
+    └──────────┬───────────────────┴──────────────────────────┘
+               │
+       ┌───────▼────────┐
+       │ 同一の正規化・検証 │  Profile jp.personal.basic/1
+       │ 3言語で同一実装   │  共通テストベクタで一致を保証
+       └───────┬────────┘
+               │
+       ┌───────▼────────┐
+       │ 人間による確認   │  INV-1: 確認済みだけが次へ進む
+       └───────┬────────┘
+               │
+       ┌───────▼────────────────┐
+       │ SLO Handoff Envelope v1 │  source.kind だけが異なる
+       └───────┬────────────────┘
+               │
+       ┌───────▼──────────────────────┐
+       │ 登録先の受け口（slo-bridge.js）│  取込元を意識しない
+       │ 検証 → 充填 → 人間が送信       │
+       └──────────────────────────────┘</pre>
+  <p>
+    登録先が実装するのは「Envelopeを1つ受け取って検証し、入力欄を埋める」ことだけです。
+    取込元が増えても登録先の実装は変わりません。
+  </p>
+</section>
+
+<section>
+  <h2>3. モジュール構成</h2>
+  <table>
+    <thead><tr><th>モジュール</th><th>責務</th><th>依存</th></tr></thead>
+    <tbody>
+      <tr><td><code>android/core</code></td><td>正規化・項目抽出・Envelope・監査ログ（Kotlin/JVM）</td><td>なし（標準ライブラリのみ）</td></tr>
+      <tr><td><code>android/app</code></td><td>カメラ・OCR・UI・WebViewブリッジ・端末セキュリティ</td><td><code>:core</code>、CameraX、ML Kit、Compose</td></tr>
+      <tr><td><code>ios/SloCore</code></td><td><code>android/core</code> と同一の責務（Swift）</td><td>Foundation、CryptoKit</td></tr>
+      <tr><td><code>ios/SecureLocalOcr</code></td><td>VisionKit・Vision・SwiftUI・WKWebViewブリッジ</td><td><code>SloCore</code></td></tr>
+      <tr><td><code>web/public/slo/slo-core.js</code></td><td>同一の責務（JavaScript）</td><td>なし</td></tr>
+      <tr><td><code>web/public/slo/slo-bridge.js</code></td><td>登録先ページの受け口。検証と充填</td><td><code>slo-core.js</code></td></tr>
+      <tr><td><code>protocol/</code></td><td>仕様・スキーマ・3実装が共有するテストベクタ</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3.1 共有コアを3言語に持つ理由と代償</h3>
+  <p>
+    OS標準のOCR（ML Kit / Vision）を使うため、単一のクロスプラットフォーム実装にはできません。
+    一方で判定規則がずれると、取込元が「正しい」とした値を登録先が拒否します。
+    そこで、業務ロジックだけを3言語で実装し、
+    <strong>同一の入力に対する同一の出力を共通テストベクタで固定</strong>しました。
+  </p>
+  <p>
+    代償は保守コストです。規則を1つ変えるたびに3か所を直す必要があります。
+    これを受け入れる代わりに、ベクタが落ちることで「直し忘れ」が必ず表面化します。
+  </p>
+</section>
+
+<section>
+  <h2>4. データの生存期間</h2>
+<pre class="diagram">撮影
+  │ Bitmap（メモリ）
+  ▼
+画像補正 ──────────────► 元のBitmapは即 recycle
+  │ 補正後Bitmap（メモリ）
+  ▼
+OCR ───────────────────► 補正後Bitmapも認識完了と同時に recycle
+  │ 認識行の配列（メモリ）
+  ▼
+項目抽出
+  │ 項目候補（メモリ）
+  ▼
+確認画面 ◄─── 人間が修正
+  │ 確認済み項目（メモリ）
+  ▼
+Envelope生成 ──────────► 有効期限5分。失効後は受け取り側が破棄
+  │
+  ▼
+WebViewへ充填
+  │
+  ▼
+セッション終了 ────────► 項目値・セッション鍵をゼロ埋め・破棄
+
+ディスクに残るもの: 監査ログのみ（値を含まない）</pre>
+  <p>
+    企画書11の「保存しない設計を優先する」を、そのまま実装しています。
+    業務上どうしても保存が必要になった場合は、保存期間・削除条件・削除対象を
+    要件として明示し、承認を得てから実装します（現時点では未実装）。
+  </p>
+</section>
+
+<section>
+  <h2>5. 引き渡しのハンドシェイク</h2>
+<pre class="diagram">登録先ページ                                    ネイティブアプリ
+     │                                              │
+  1. slo-bridge.js 読込                             │
+  2. SLO.ready()                                    │
+     │  {profile, document_type, fields[], nonce}   │
+     ├─────────── postMessage ────────────────────► │
+     │                                         3. オリジン許可リスト検証
+     │                                         4. セッション鍵生成（端末内）
+     │  5. SLO._session({key_id, key_hex, nonce})    │
+     │ ◄────────── evaluateJavascript ────────────── │
+     │                                         6. 確認画面を人間へ提示
+     │                                            「この内容を入力する」
+     │  7. SLO._deliver(envelope)                    │
+     │ ◄────────── evaluateJavascript ────────────── │
+  8. 検証                                            │
+     - protocol / profile                            │
+     - confirmed フラグ                              │
+     - 失効時刻                                      │
+     - 正規化の再計算（値が正規形か）                 │
+     - HMAC                                          │
+     - handoff_id の重複（リプレイ）                  │
+  9. 入力欄へ充填（自動送信はしない）                  │
+     │  10. slo.filled {field_count}                 │
+     ├─────────── postMessage ────────────────────► │
+     │                                        11. 監査ログ（値なし）
+     ▼
+  人間が内容を確認して送信</pre>
+
+  <h3>5.1 なぜ受け取り側でも正規化を再計算するのか</h3>
+  <p>
+    HMACは「途中で書き換えられていないこと」を示しますが、
+    「そもそも取込元が正しい値を作ったか」は示しません。
+    受け取り側で正規化をやり直し、結果が届いた値と一致しなければ拒否します（INV-6）。
+    これにより、取込元と登録先で共有コアの版が食い違った場合にも、
+    <strong>黙って通るのではなく明確に落ちます</strong>。
+  </p>
+</section>
+
+<section>
+  <h2>6. Androidのビルド構成</h2>
+<pre class="diagram">              ┌──────────────────────────────┐
+              │        :core（Kotlin/JVM）    │
+              │  正規化・抽出・Envelope・ログ  │
+              │  Android SDK に依存しない      │
+              └───────────────┬──────────────┘
+                              │
+              ┌───────────────▼──────────────┐
+              │            :app              │
+              └───────┬──────────────┬───────┘
+                      │              │
+        ┌─────────────▼───┐   ┌──────▼──────────────┐
+        │ offline フレーバー│   │ web フレーバー       │
+        │ INTERNET 権限なし │   │ INTERNET 権限あり    │
+        │ 引き渡しは T1/T2  │   │ 引き渡しは T3        │
+        │ OCR専用運用       │   │ 通信先は許可リスト   │
+        └──────────────────┘   └─────────────────────┘</pre>
+  <p>
+    <code>:core</code> が Android SDK に依存しないため、
+    SDKの無いCI環境でも <code>gradle :core:test</code> だけを実行できます
+    （<code>settings.gradle.kts</code> が <code>ANDROID_HOME</code> の有無で <code>:app</code> の構成を切り替えます）。
+    業務ロジックの回帰検証を、重いAndroidビルドから切り離すためです。
+  </p>
+</section>
+
+<section>
+  <h2>7. 項目抽出の仕組み</h2>
+  <p>機械学習ではなく、決定的なルールベース処理です。端末内で完結し、結果を再現できます。</p>
+  <ol>
+    <li><strong>ラベル照合。</strong>各行から見出し語（「氏名」「〒」「TEL」など）を探す。
+        行内で最も左、同着なら最も長いものを採用する（「メールアドレス」が「メール」に負けない）</li>
+    <li><strong>値の取得。</strong>ラベルの直後に値があればそれを使う（信頼度 0.90）。
+        空なら次の行を使う（0.75）。次の行にもラベルがある場合は諦める</li>
+    <li><strong>住所の折り返し。</strong>住所だけは、ラベルの無い後続行を最大2行まで連結する</li>
+    <li><strong>パターン照合。</strong>ラベルの無い行が、行全体で郵便番号・電話番号・
+        メールアドレスの形をしていれば拾う（0.60）。誤検出を避けるため部分一致は使わない</li>
+    <li><strong>正規化と検証。</strong>取得した文字列をProfileの規則にかける。
+        失敗した項目は値を空にし、読み取った生の文字列を「要修正」として人間に見せる</li>
+  </ol>
+  <p>
+    信頼度は <code>基準値 × OCRの行信頼度</code> です。
+    0.80未満は確認画面で警告します。数値そのものは出さず「高／中／低」で示します。
+  </p>
+</section>
+
+<section>
+  <h2>8. 意図的に採用しなかった選択肢</h2>
+  <table>
+    <thead><tr><th>選択肢</th><th>不採用の理由</th></tr></thead>
+    <tbody>
+      <tr><td>クラウドOCR（精度は高い）</td><td>原則1に反する。本システムの前提が崩れる</td></tr>
+      <tr><td>生成AIによる項目抽出（柔軟）</td><td>原則2に反する。ルールベースで足りる範囲に絞った</td></tr>
+      <tr><td>Flutter / React Native による単一実装</td><td>OS標準の端末内OCRを使うため、結局OS固有実装が必要。
+          共有するのは業務ロジックだけにした</td></tr>
+      <tr><td>JSONライブラリの利用</td><td>依存を減らすため。加えて正準化を3実装で完全一致させる必要があった</td></tr>
+      <tr><td>確認済みデータの自社サーバ経由での中継</td><td>個人情報の保管場所が増える。端末から登録先へ直接渡す</td></tr>
+      <tr><td>完全自動送信</td><td>誤りを人間が捕まえる最後の場所を失う</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+<footer class="doc">Secure Local OCR アーキテクチャ 版0.1</footer>
+</body>
+</html>
