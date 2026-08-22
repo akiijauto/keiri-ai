@@ -76,7 +76,7 @@
   <ol>
     <li>タブレットのブラウザでGitHubにログインする（リポジトリは非公開のため必要）</li>
     <li>リポジトリの <strong>Releases</strong> を開き、最新の「Secure Local OCR 実機検証ビルド」を選ぶ</li>
-    <li><code>SecureLocalOCR-offline-*.apk</code> をタップしてダウンロードする</li>
+    <li><code>SecureLocalOCR-offline-arm64-v8a-*.apk</code> をタップしてダウンロードする</li>
     <li>ダウンロード通知をタップしてインストールする。
         「不明なアプリのインストール」を求められたら、そのブラウザに対して許可する</li>
   </ol>
@@ -84,12 +84,21 @@
   <table>
     <thead><tr><th>APK</th><th>INTERNET権限</th><th>使いどころ</th></tr></thead>
     <tbody>
-      <tr><td><code>-offline-</code></td><td><strong>持たない</strong></td>
+      <tr><td><code>offline-arm64-v8a</code></td><td><strong>持たない</strong></td>
           <td>まずこちら。撮影・OCR・抽出・確認まで。引き渡しは表示とコピー</td></tr>
-      <tr><td><code>-web-</code></td><td>持つ（許可リスト限定）</td>
+      <tr><td><code>offline-universal</code></td><td><strong>持たない</strong></td>
+          <td>上記が入らない端末向けの控え。サイズが倍になる</td></tr>
+      <tr><td><code>web-arm64-v8a</code></td><td>持つ（許可リスト限定）</td>
           <td>Webフォームへの充填まで確認する場合（§6）</td></tr>
     </tbody>
   </table>
+
+  <p class="note">
+    APKはCPUの種類（ABI）ごとに分けて配布しています。同梱している日本語OCRモデルと
+    ネイティブライブラリが全ABI分入ると50MBを超え、配布経路によっては扱えないためです。
+    現行のタブレットはほぼ <code>arm64-v8a</code> です。
+    「アプリがインストールされていません」と出る場合は <code>universal</code> を試してください。
+  </p>
 
   <p class="note">
     どちらもデバッグ署名のビルドです。動作確認専用で、業務端末への正式配布には使えません。

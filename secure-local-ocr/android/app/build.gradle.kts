@@ -51,6 +51,23 @@ android {
         }
     }
 
+    /**
+     * ABIごとにAPKを分割する。
+     *
+     * ML Kit の同梱モデルとネイティブライブラリが4ABI分入ると50MBを超え、
+     * 検証用に配布する手段（メール・チャット・MDM）で扱いにくい。
+     * 実機は arm64-v8a がほとんどなので、必要なものだけを配る。
+     * universalApk も残し、ABIが不明な端末はそちらを使えるようにする。
+     */
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true

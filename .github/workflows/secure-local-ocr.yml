@@ -112,27 +112,45 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
           REPO: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           cd secure-local-ocr/android/app/build/outputs/apk
           TAG="slo-android-build${RUN_NUMBER}"
-          OFFLINE="SecureLocalOCR-offline-build${RUN_NUMBER}.apk"
-          WEB="SecureLocalOCR-web-build${RUN_NUMBER}.apk"
-          mv offline/debug/app-offline-debug.apk "$OFFLINE"
-          mv web/debug/app-web-debug.apk "$WEB"
+
+          # ABI分割しているので、配布名を付け直して集める。
+          # arm64-v8a が現行端末のほぼすべて。universal はABIが不明な端末向けの控え。
+          ASSETS=()
+          for FLAVOR in offline web; do
+            for ABI in arm64-v8a universal; do
+              SRC="${FLAVOR}/debug/app-${FLAVOR}-${ABI}-debug.apk"
+              if [ ! -f "$SRC" ]; then
+                echo "期待したAPKがありません: $SRC" >&2
+                ls -R . >&2
+                exit 1
+              fi
+              DEST="SecureLocalOCR-${FLAVOR}-${ABI}-build${RUN_NUMBER}.apk"
+              cp "$SRC" "$DEST"
+              ASSETS+=("$DEST")
+            done
+          done
 
           {
             echo "実機検証用のデバッグビルドです。**架空データでのみ使用してください。**"
             echo
+            echo "まず \`offline-arm64-v8a\` をお試しください。"
+            echo
             echo "| ファイル | INTERNET権限 | 用途 |"
             echo "|---|---|---|"
-            echo "| \`${OFFLINE}\` | **持たない** | 撮影・OCR・項目抽出・確認まで。まずこちらで検証してください |"
-            echo "| \`${WEB}\` | 持つ（許可リスト限定） | Web入力支援まで確認する場合 |"
+            echo "| \`offline-arm64-v8a\` | **持たない** | 撮影・OCR・項目抽出・確認まで。現行端末はこちら |"
+            echo "| \`offline-universal\` | **持たない** | 上記が入らない端末向けの控え（サイズ大） |"
+            echo "| \`web-arm64-v8a\` | 持つ（許可リスト限定） | Web入力支援まで確認する場合 |"
+            echo "| \`web-universal\` | 持つ（許可リスト限定） | 同上・控え |"
             echo
             echo "インストール手順と確認項目は secure-local-ocr/docs/tablet-check.html を参照してください。"
             echo
             echo "- どちらもデバッグ署名です。業務端末への正式配布には使えません。"
-            echo "- offlineビルドに INTERNET 権限が無いことは、このビルドの検証ステップで実測済みです。"
+            echo "- offlineビルドに INTERNET 権限が無いことは、このビルドの検証ステップで全APKについて実測済みです。"
           } > notes.md
 
           # タグは実際にビルドしたコミットへ向ける。
@@ -144,4 +162,4 @@ jobs:
             --title "Secure Local OCR 実機検証ビルド #${RUN_NUMBER}" \
             --prerelease \
             --notes-file notes.md \
-            "$OFFLINE" "$WEB"
+            "${ASSETS[@]}"
