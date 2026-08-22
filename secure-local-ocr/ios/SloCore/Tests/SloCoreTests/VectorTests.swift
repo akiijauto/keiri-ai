@@ -67,8 +67,17 @@ final class VectorTests: XCTestCase {
             let id = c["id"] as? String ?? "?"
             let documentType = c["document_type"] as? String ?? "generic"
             let lineConfidence = c["line_confidence"] as? Double ?? 1.0
-            let lines = (c["lines"] as? [String] ?? []).map {
-                SloExtractor.Line(text: $0, confidence: lineConfidence)
+            // 行は文字列、または {"text":..., "box":[left,top,right,bottom]} の形で書く。
+            let lines: [SloExtractor.Line] = (c["lines"] as? [Any] ?? []).compactMap { item in
+                if let t = item as? String {
+                    return SloExtractor.Line(text: t, confidence: lineConfidence)
+                }
+                guard let o = item as? [String: Any], let t = o["text"] as? String else { return nil }
+                var box: SloExtractor.Box?
+                if let b = o["box"] as? [Int], b.count == 4 {
+                    box = SloExtractor.Box(left: b[0], top: b[1], right: b[2], bottom: b[3])
+                }
+                return SloExtractor.Line(text: t, confidence: lineConfidence, box: box)
             }
             let expected = c["expected"] as? [String: [String: Any]] ?? [:]
             let actual = SloExtractor.extract(lines: lines, documentType: documentType, today: fixedToday)

@@ -41,7 +41,14 @@ class OnDeviceOcr(
                     for (line in block.lines) {
                         // confidence は端末・モデルによっては返らない。その場合は 1.0 として扱う。
                         val confidence = (line.confidence as? Float)?.toDouble() ?: 1.0
-                        lines.add(Extractor.Line(line.text, confidence.coerceIn(0.0, 1.0)))
+                        // 外接矩形も端末によっては返らない。無い場合は行の並び順で対応づける。
+                        // 帳票は「ラベル列 | 値列」の表であることが多く、ML Kit は列ごとに
+                        // 別ブロックとして返すことがある。並び順だけではラベルと値が
+                        // 対応づかないため、取れる限り位置を渡す。
+                        val box = line.boundingBox?.let {
+                            Extractor.Box(it.left, it.top, it.right, it.bottom)
+                        }
+                        lines.add(Extractor.Line(line.text, confidence.coerceIn(0.0, 1.0), box))
                     }
                 }
                 onResult(Result(lines, System.currentTimeMillis() - startedAt))

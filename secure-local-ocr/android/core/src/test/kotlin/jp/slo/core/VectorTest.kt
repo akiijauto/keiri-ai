@@ -68,7 +68,17 @@ class VectorTest {
             val id = o["id"]!!.asString!!
             val documentType = o["document_type"]!!.asString!!
             val lineConfidence = o["line_confidence"]?.asDouble ?: 1.0
-            val lines = o["lines"]!!.asArr!!.items.map { Extractor.Line(it.asString!!, lineConfidence) }
+            // 行は文字列、または {"text":..., "box":[left,top,right,bottom]} の形で書く。
+            val lines = o["lines"]!!.asArr!!.items.map { item ->
+                item.asString?.let { return@map Extractor.Line(it, lineConfidence) }
+                val lo = item.asObj!!
+                val b = lo["box"]?.asArr?.items?.map { it.asDouble!!.toInt() }
+                Extractor.Line(
+                    lo["text"]!!.asString!!,
+                    lineConfidence,
+                    b?.let { Extractor.Box(it[0], it[1], it[2], it[3]) }
+                )
+            }
             val expected = o["expected"]!!.asObj!!
 
             val actual = Extractor.extract(lines, documentType, fixedToday)

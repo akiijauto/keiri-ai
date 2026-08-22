@@ -21,6 +21,16 @@ enum OnDeviceOcr {
         case recognitionFailed(String)
     }
 
+    /// Vision の正規化座標（0-1・原点は左下）を、Extractor が使う画像のピクセル座標
+    /// （原点は左上）へ直す。上下を反転しないと「同じ行」「直下」の判定が逆になる。
+    private static func pixelBox(_ rect: CGRect, width: Int, height: Int) -> SloExtractor.Box {
+        let left = Int((rect.minX * CGFloat(width)).rounded())
+        let right = Int((rect.maxX * CGFloat(width)).rounded())
+        let top = Int(((1.0 - rect.maxY) * CGFloat(height)).rounded())
+        let bottom = Int(((1.0 - rect.minY) * CGFloat(height)).rounded())
+        return SloExtractor.Box(left: left, top: top, right: max(right, left + 1), bottom: max(bottom, top + 1))
+    }
+
     /// 端末内で認識する。画像もテキストもネットワークへ出さない。
     static func recognize(image: UIImage, completion: @escaping (Swift.Result<Result, OcrError>) -> Void) {
         guard let cgImage = image.cgImage else {
@@ -36,12 +46,18 @@ enum OnDeviceOcr {
                 return
             }
             let observations = request.results as? [VNRecognizedTextObservation] ?? []
+            // Vision は orientation を適用した後の座標系で返す。cgImage.width/height は
+            // 回転前の値なので、90度回転した写真では縦横が入れ替わり、行と列の判定が狂う。
+            // UIImage.size は orientation 適用済みなので、そちらから画素数を出す。
+            let width = Int((image.size.width * image.scale).rounded())
+            let height = Int((image.size.height * image.scale).rounded())
             var lines: [SloExtractor.Line] = []
             for observation in observations {
                 guard let candidate = observation.topCandidates(1).first else { continue }
                 lines.append(SloExtractor.Line(
                     text: candidate.string,
-                    confidence: min(max(Double(candidate.confidence), 0.0), 1.0)
+                    confidence: min(max(Double(candidate.confidence), 0.0), 1.0),
+                    box: pixelBox(observation.boundingBox, width: width, height: height)
                 ))
             }
             let elapsed = Int(Date().timeIntervalSince(startedAt) * 1000)

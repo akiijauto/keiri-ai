@@ -72,7 +72,9 @@ fun OcrDebugScreen(
                         Column {
                             Text(line.text, style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "信頼度 %.2f".format(line.confidence),
+                                "信頼度 %.2f".format(line.confidence) +
+                                    (line.box?.let { " / 位置 x${it.left}-${it.right} y${it.top}-${it.bottom}" }
+                                        ?: " / 位置なし（並び順で対応づけ）"),
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
