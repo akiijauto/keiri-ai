@@ -101,8 +101,13 @@ jobs:
 
       # タブレットのブラウザから直接インストールできるよう、Releaseに置く。
       # 手元にPCが無くても実機検証を始められるようにするため。
+      # 実機検証の段階では、開発ブランチへの push でも配布物を出す。
+      # workflow_dispatch は既定ブランチにワークフローが無いと使えないため、
+      # これが無いとタブレットへAPKを持っていく手段が無くなる。
       - name: 実機検証用のReleaseを作成
-        if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.publish_release) ||
+          (github.event_name == 'push' && github.ref_name == 'claude/ondevice-ocr-system-p7n25k')
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
