@@ -17,6 +17,7 @@
     <a href="docs/security-design.html">セキュリティ設計</a>
     <a href="docs/threat-model.html">脅威モデル</a>
     <a href="docs/test-plan.html">テスト計画</a>
+    <a href="docs/tablet-check.html">タブレット実機確認</a>
   </nav>
 </header>
 
@@ -115,6 +116,7 @@ gradle :app:verifyOfflineFlavorHasNoInternet</code></pre>
   <h3>3. Web（登録先サイトと入居フォーム）</h3>
 <pre><code>cd secure-local-ocr/web
 node server.mjs                       # http://127.0.0.1:8787/
+node server.mjs 8787 192.168.1.10     # 実機検証時のみ: 同じWi-Fi上のタブレットから繋ぐ
 
 # 共有コア（JS）のベクタテスト
 npm test
@@ -129,7 +131,21 @@ npm run test:e2e</code></pre>
     <li><code>http://127.0.0.1:8787/registration/</code> — 登録先の申込フォーム</li>
   </ul>
 
-  <h3>4. iOS / iPadOS</h3>
+  <h3>4. 実機（Androidタブレット）で確認する</h3>
+  <p>
+    APKはCIがビルドし、Releaseから直接ダウンロードできます（リポジトリは非公開のため、
+    タブレットのブラウザでGitHubにログインしてください）。
+    手順は <a href="docs/tablet-check.html">タブレット実機確認の手順</a> にまとめています。
+    検証用紙は <code>samples/test-form-01.pdf</code> / <code>test-form-02.pdf</code>、
+    期待値は <code>samples/expected-values.html</code> です。
+  </p>
+  <p class="note">
+    タブレット単体で、OCR精度・処理速度・機内モードでの完走・
+    「通信権限を持たないこと」まで確認できます。
+    Webフォームへの充填だけは、同じWi-Fi上のPCで参照実装を動かす必要があります。
+  </p>
+
+  <h3>5. iOS / iPadOS</h3>
 <pre><code>cd secure-local-ocr/ios/SloCore
 swift test                            # 共有コアのベクタテスト
 

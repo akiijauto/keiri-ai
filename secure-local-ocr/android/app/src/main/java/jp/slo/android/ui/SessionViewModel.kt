@@ -18,7 +18,7 @@ import jp.slo.core.Profile
  */
 class SessionViewModel : ViewModel() {
 
-    enum class Step { LOCKED, CAPTURE, OCR, REVIEW, HANDOFF, DONE }
+    enum class Step { LOCKED, CAPTURE, OCR, REVIEW, HANDOFF, DONE, VERIFY }
 
     data class EditableField(
         val key: String,

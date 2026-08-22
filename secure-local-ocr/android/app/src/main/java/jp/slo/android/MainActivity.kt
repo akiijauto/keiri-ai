@@ -23,6 +23,7 @@ import jp.slo.android.ui.LockScreen
 import jp.slo.android.ui.ReviewScreen
 import jp.slo.android.ui.SessionViewModel
 import jp.slo.android.ui.SloTheme
+import jp.slo.android.ui.VerifyScreen
 import jp.slo.core.AuditLog
 import jp.slo.core.Extractor
 
@@ -44,19 +45,22 @@ class MainActivity : FragmentActivity() {
     private var bridge: SloWebViewBridge? = null
     private var lastInteractionAt = 0L
 
-    /** 登録先の業務Webサイト。実運用ではMDM等で配布する設定から読み込む。 */
-    private val targetUrl = "https://form.example.co.jp/registration/"
-    private val allowedOrigins = listOf(
-        "https://form.example.co.jp",
-        "http://10.0.2.2:8787",   // エミュレータからホストPCの参照実装へ
-        "http://127.0.0.1:8787"
-    )
+    /**
+     * 登録先の業務Webサイトと許可オリジン。
+     * 実運用ではMDM配布の設定から読み込む。検証段階ではデバッグビルドのみ端末上で変更できる。
+     */
+    private val targetUrl: String get() = AppConfig.targetUrl(this)
+    private val allowedOrigins: List<String> get() = AppConfig.allowedOrigins(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // スクリーンショット・画面録画・最近使ったアプリのサムネイルを抑止（企画書 15）
-        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // スクリーンショット・画面録画・最近使ったアプリのサムネイルを抑止（企画書 15）。
+        // 実機検証で結果を記録できるよう、デバッグビルドに限り明示的な設定で外せる。
+        // リリースビルドでは AppConfig.allowScreenshots が常に false を返すため、必ず有効になる。
+        if (!AppConfig.allowScreenshots(this)) {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        }
 
         vm = ViewModelProvider(this)[SessionViewModel::class.java]
         auditLog = FileAuditLog(this)
@@ -86,7 +90,8 @@ class MainActivity : FragmentActivity() {
                                     lockMessage = "認証できませんでした（$code）"
                                 }
                             )
-                        }
+                        },
+                        onVerify = { vm.goTo(SessionViewModel.Step.VERIFY) }
                     )
 
                     SessionViewModel.Step.CAPTURE, SessionViewModel.Step.OCR -> CaptureScreen(
@@ -130,7 +135,28 @@ class MainActivity : FragmentActivity() {
                         integrity = integrity,
                         lockAvailable = true,
                         message = "セッションを終了しました。データは破棄済みです。",
-                        onUnlock = { vm.goTo(SessionViewModel.Step.CAPTURE) }
+                        onUnlock = { vm.goTo(SessionViewModel.Step.CAPTURE) },
+                        onVerify = { vm.goTo(SessionViewModel.Step.VERIFY) }
+                    )
+
+                    SessionViewModel.Step.VERIFY -> VerifyScreen(
+                        info = AppConfig.describe(this),
+                        hasInternetPermission = AppConfig.hasInternetPermission(this),
+                        isDebugBuild = BuildConfig.DEBUG,
+                        targetUrl = AppConfig.targetUrl(this),
+                        allowScreenshots = AppConfig.allowScreenshots(this),
+                        auditLogTail = auditLog.tail(20),
+                        onTargetUrlChange = { url ->
+                            AppConfig.setTargetUrl(this, url)
+                            vm.statusMessage = "登録先URLを保存しました。"
+                            vm.goTo(SessionViewModel.Step.LOCKED)
+                        },
+                        onAllowScreenshotsChange = { allow ->
+                            AppConfig.setAllowScreenshots(this, allow)
+                            // FLAG_SECURE はウィンドウ生成時に決まるため、作り直して反映する
+                            recreate()
+                        },
+                        onBack = { vm.goTo(SessionViewModel.Step.LOCKED) }
                     )
                 }
             }

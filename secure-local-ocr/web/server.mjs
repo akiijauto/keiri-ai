@@ -2,11 +2,12 @@
  * ローカル開発用サーバ（登録先Webサイトの参照実装）。
  *
  * 方針:
- *  - 127.0.0.1 のみにバインドする。外部NICでは待ち受けない。
+ *  - 既定では 127.0.0.1 のみにバインドする。外部NICでは待ち受けない。
+ *    実機検証でタブレットから繋ぐ場合に限り、明示的にLANアドレスを指定できる。
  *  - 送信された個人情報を保存しない。受け付けたのは何項目か、だけを記録する。
  *  - CSPで外部への通信をすべて禁止する（許可リスト方式の実装例／企画書 7）。
  *
- * 実行: node web/server.mjs [port]
+ * 実行: node web/server.mjs [port] [host]
  */
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -21,7 +22,17 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 const HERE = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PUBLIC_DIR = join(HERE, 'public');
 const PORT = Number(process.argv[2] ?? process.env.PORT ?? 8787);
-const HOST = '127.0.0.1';
+
+/**
+ * 既定は 127.0.0.1（同一端末からのみ到達可能）。
+ *
+ * 実機検証では、同じWi-Fi上のタブレットからこの参照実装へ繋ぐ必要がある。
+ * そのときだけ第2引数または SLO_HOST でLAN内アドレスを指定する。
+ *   node server.mjs 8787 192.168.1.10
+ *   node server.mjs 8787 0.0.0.0
+ * 検証用の措置であり、常用しないこと（起動時に警告を出す）。
+ */
+const HOST = process.argv[3] ?? process.env.SLO_HOST ?? '127.0.0.1';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -197,6 +208,13 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   audit('SERVER_START', { count: Profile.FIELDS.length });
   process.stdout.write(`SLO reference site: http://${HOST}:${PORT}/\n`);
+  if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
+    process.stdout.write(
+      '警告: ループバック以外で待ち受けています。同一ネットワーク上の他の端末から到達できます。\n'
+      + '      実機検証のための一時的な用途に限り、終わったら停止してください。\n'
+      + '      架空データ以外をこのサーバへ入力しないこと。\n',
+    );
+  }
 });
 
 export { server };

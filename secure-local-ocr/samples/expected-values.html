@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>検証用紙の期待値（架空データ）</title>
+<link rel="stylesheet" href="../docs/doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>検証用紙の期待値</h1>
+  <div class="meta">Secure Local OCR ／ すべて架空データ</div>
+</header>
+<main>
+<section>
+  <h2>使い方</h2>
+  <p>
+    <code>test-form-01.pdf</code> / <code>test-form-02.pdf</code> を印刷（または別の画面に表示）して撮影し、
+    アプリの確認画面に出た値を下表と突き合わせてください。
+  </p>
+  <div class="callout">
+    期待値はこの別紙にだけ書いてあります。用紙そのものに答えを載せると、
+    OCRがその行まで読んでしまい、抽出結果の評価にならないためです。
+  </div>
+</section>
+
+<section>
+  <h2>test-form-01（入居申込書 / residency_application）</h2>
+  <table>
+    <thead><tr><th>項目</th><th>用紙の記載</th><th>期待される確認画面の値</th></tr></thead>
+    <tbody>
+      <tr><td>顧客番号</td><td>CUS-1024</td><td><code>CUS-1024</code></td></tr>
+      <tr><td>氏名</td><td>山田　太郎</td><td><code>山田　太郎</code></td></tr>
+      <tr><td>フリガナ</td><td>ヤマダ　タロウ</td><td><code>ヤマダ　タロウ</code></td></tr>
+      <tr><td>生年月日</td><td>昭和55年1月1日</td><td><code>1980-01-01</code></td></tr>
+      <tr><td>郵便番号</td><td>〒150-0001</td><td><code>150-0001</code></td></tr>
+      <tr><td>住所</td><td>東京都渋谷区神宮前１－２－３<br>グランドメゾン渋谷 401</td>
+          <td><code>東京都渋谷区神宮前1-2-3　グランドメゾン渋谷　401</code></td></tr>
+      <tr><td>電話番号</td><td>090-1234-5678</td><td><code>09012345678</code></td></tr>
+      <tr><td>メールアドレス</td><td>taro.yamada@example.co.jp</td><td><code>taro.yamada@example.co.jp</code></td></tr>
+      <tr><td>入居予定日</td><td>令和8年4月1日</td><td><code>2026-04-01</code></td></tr>
+    </tbody>
+  </table>
+  <p class="note">
+    「勤務先」「備考」はProfile <code>jp.personal.basic/1</code> の対象外なので、抽出されないのが正しい動作です。
+    「※この欄は記入しないでください」「受付番号 -----」も拾わないことを確認してください。
+  </p>
+</section>
+
+<section>
+  <h2>test-form-02（連絡先登録票 / contact_registration）</h2>
+  <p>ラベルの<strong>次の行</strong>に値がある様式です。信頼度は 0.75 前後になるのが想定どおりです。</p>
+  <table>
+    <thead><tr><th>項目</th><th>用紙の記載</th><th>期待される確認画面の値</th></tr></thead>
+    <tbody>
+      <tr><td>顧客番号</td><td>CUS-2048</td><td><code>CUS-2048</code></td></tr>
+      <tr><td>氏名</td><td>山田　花子</td><td><code>山田　花子</code></td></tr>
+      <tr><td>フリガナ</td><td>ヤマダ　ハナコ</td><td><code>ヤマダ　ハナコ</code></td></tr>
+      <tr><td>電話番号</td><td>03-1234-5678</td><td><code>0312345678</code></td></tr>
+      <tr><td>メールアドレス</td><td>hanako@example.com</td><td><code>hanako@example.com</code></td></tr>
+      <tr><td>生年月日</td><td>平成2年3月4日</td><td><code>1990-03-04</code></td></tr>
+    </tbody>
+  </table>
+  <p class="note">
+    下部の8ポイント程度の小さい文字（郵便番号・住所・担当）は、小さい文字の読み取り確認用です。
+    読めない場合に<strong>誤った値を確定させず「要修正」になる</strong>ことが確認したい挙動です。
+  </p>
+</section>
+
+<section>
+  <h2>判定の目安</h2>
+  <table>
+    <thead><tr><th>記号</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td>○</td><td>期待値どおり。そのまま確認できる</td></tr>
+      <tr><td>△</td><td>軽微な修正で使える（例: 全角スペースが1個多い）</td></tr>
+      <tr><td>×</td><td>読めない、または誤った値が入っている</td></tr>
+    </tbody>
+  </table>
+  <div class="callout danger">
+    最も重大なのは「×のうち、誤った値が確定できてしまう」ケースです。
+    読めなかった場合は「要修正」と表示されるのが正しい挙動で、
+    もっともらしい誤りをそのまま通してしまう場合は抽出規則の見直しが必要です。
+  </div>
+</section>
+</main>
+<footer class="doc">Secure Local OCR ／ 記載されている情報はすべて架空のものです。</footer>
+</body>
+</html>

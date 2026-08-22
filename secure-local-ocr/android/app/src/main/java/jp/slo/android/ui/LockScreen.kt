@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,7 +25,8 @@ fun LockScreen(
     integrity: DeviceIntegrity.Result,
     lockAvailable: Boolean,
     message: String?,
-    onUnlock: () -> Unit
+    onUnlock: () -> Unit,
+    onVerify: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -64,6 +66,12 @@ fun LockScreen(
 
         Button(onClick = onUnlock, enabled = integrity.trustworthy && lockAvailable) {
             Text("認証して開始")
+        }
+
+        // 認証前でも、このビルドの素性（とくに通信権限の有無）は確認できるようにしておく。
+        // 個人情報を扱う前に「何を渡すビルドなのか」を見られることに意味がある。
+        TextButton(onClick = onVerify, modifier = Modifier.padding(top = 8.dp)) {
+            Text("ビルド情報と検証設定")
         }
 
         if (message != null) {

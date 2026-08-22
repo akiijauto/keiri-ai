@@ -1,0 +1,138 @@
+# Secure Local OCR 専用のCI。
+#
+# リポジトリ内の別企画（請求書仕訳AI）には影響しないよう、
+# secure-local-ocr/ 配下の変更でのみ動く。
+#
+# 実機検証のために、ビルドしたAPKを直接ダウンロードできる形で公開する。
+# リポジトリは非公開なので、Releaseの資産もオーナーだけが取得できる。
+name: Secure Local OCR
+
+on:
+  push:
+    branches:
+      - claude/ondevice-ocr-system-p7n25k
+      - main
+    paths:
+      - 'secure-local-ocr/**'
+      - '.github/workflows/secure-local-ocr.yml'
+  pull_request:
+    paths:
+      - 'secure-local-ocr/**'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '実機検証用にAPKをReleaseとして公開する'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  shared-core-and-web:
+    name: 共有コアとWebの検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Kotlin共有コアのテスト（Android SDK不要）
+        working-directory: secure-local-ocr/android
+        run: ./gradlew :core:test --no-daemon
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: JavaScript共有コアのテスト
+        working-directory: secure-local-ocr/web
+        run: node --test tests/vectors.test.mjs
+
+      - name: ブラウザE2E
+        working-directory: secure-local-ocr/web
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+          node --test tests/e2e.spec.mjs
+
+      - name: テスト結果の保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-reports
+          path: secure-local-ocr/android/core/build/reports/tests/
+          if-no-files-found: ignore
+
+  android:
+    name: Androidビルドと通信権限の検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: APKのビルド（offline / web）
+        working-directory: secure-local-ocr/android
+        run: ./gradlew :app:assembleOfflineDebug :app:assembleWebDebug --no-daemon
+
+      # ここが本システムの根拠。ML Kit の依存から INTERNET 権限が混入した実績があるため、
+      # 生成されたAPKそのものを毎回検査する（原則8）。
+      - name: offlineビルドが通信権限を持たないことを検証
+        working-directory: secure-local-ocr/android
+        run: ./gradlew :app:verifyOfflineFlavorHasNoInternet --no-daemon
+
+      - name: 権限の実測結果を記録
+        working-directory: secure-local-ocr
+        run: ./tools/verify_no_network.sh
+
+      - name: APKの保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: secure-local-ocr/android/app/build/outputs/apk/*/debug/*.apk
+          if-no-files-found: error
+
+      # タブレットのブラウザから直接インストールできるよう、Releaseに置く。
+      # 手元にPCが無くても実機検証を始められるようにするため。
+      - name: 実機検証用のReleaseを作成
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd secure-local-ocr/android/app/build/outputs/apk
+          TAG="slo-android-build${RUN_NUMBER}"
+          OFFLINE="SecureLocalOCR-offline-build${RUN_NUMBER}.apk"
+          WEB="SecureLocalOCR-web-build${RUN_NUMBER}.apk"
+          mv offline/debug/app-offline-debug.apk "$OFFLINE"
+          mv web/debug/app-web-debug.apk "$WEB"
+
+          {
+            echo "実機検証用のデバッグビルドです。**架空データでのみ使用してください。**"
+            echo
+            echo "| ファイル | INTERNET権限 | 用途 |"
+            echo "|---|---|---|"
+            echo "| \`${OFFLINE}\` | **持たない** | 撮影・OCR・項目抽出・確認まで。まずこちらで検証してください |"
+            echo "| \`${WEB}\` | 持つ（許可リスト限定） | Web入力支援まで確認する場合 |"
+            echo
+            echo "インストール手順と確認項目は secure-local-ocr/docs/tablet-check.html を参照してください。"
+            echo
+            echo "- どちらもデバッグ署名です。業務端末への正式配布には使えません。"
+            echo "- offlineビルドに INTERNET 権限が無いことは、このビルドの検証ステップで実測済みです。"
+          } > notes.md
+
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --title "Secure Local OCR 実機検証ビルド #${RUN_NUMBER}" \
+            --prerelease \
+            --notes-file notes.md \
+            "$OFFLINE" "$WEB"
