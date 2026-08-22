@@ -526,6 +526,52 @@
           "valid": true
         }
       }
+    },
+    {
+      "id": "extract-10-overlapping-line-boxes",
+      "comment": "実際のOCR出力から採った座標。折り返した行の外接矩形は前の行と数ピクセル重なる（417 < 422）。top>=bottom で判定すると折り返しを取りこぼす。",
+      "document_type": "generic",
+      "lines": [
+        {
+          "text": "住所東京都渋谷区神宮前1-2-3",
+          "box": [
+            12,
+            389,
+            398,
+            422
+          ]
+        },
+        {
+          "text": "グランドメゾン渋谷401",
+          "box": [
+            166,
+            417,
+            351,
+            446
+          ]
+        },
+        {
+          "text": "電話番号090-1234-5678",
+          "box": [
+            13,
+            471,
+            282,
+            498
+          ]
+        }
+      ],
+      "expected": {
+        "address": {
+          "value": "東京都渋谷区神宮前1-2-3　グランドメゾン渋谷401",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "phone": {
+          "value": "09012345678",
+          "confidence": 0.9,
+          "valid": true
+        }
+      }
     }
   ]
 }

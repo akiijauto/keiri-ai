@@ -38,6 +38,16 @@ public enum SloExtractor {
             Box.overlapRatio(left, right, other.left, other.right) >= 0.5
         }
 
+        /// other より下の行にあるか。
+        ///
+        /// 折り返した行の外接矩形は、前の行と数ピクセル重なることがある
+        /// （実際のOCR出力で確認）。`top >= other.bottom` で判定すると
+        /// 折り返しを取りこぼすため、「同じ行ではなく、より下から始まる」で判定する。
+        public func isBelow(_ other: Box) -> Bool { !sameRow(other) && top > other.top }
+
+        /// other の下端からこの矩形の上端までの間隔。重なっている場合は0。
+        public func gapBelow(_ other: Box) -> Int { max(0, top - other.bottom) }
+
         private static func overlapRatio(_ aFrom: Int, _ aTo: Int, _ bFrom: Int, _ bTo: Int) -> Double {
             let span = min(aTo - aFrom, bTo - bFrom)
             if span <= 0 { return 0 }
@@ -234,8 +244,8 @@ public enum SloExtractor {
         for j in lines.indices where j != labelIndex {
             guard let box = lines[j].box else { continue }
             if lines[j].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
-            if box.top < labelBox.bottom { continue }
-            if Double(box.top - labelBox.bottom) > maxGap { continue }
+            if !box.isBelow(labelBox) { continue }
+            if Double(box.gapBelow(labelBox)) > maxGap { continue }
             if !labelBox.sameColumn(box) { continue }
             if findLabel(lines[j].text) != nil { continue }
             if hasLabelToLeft(lines, index: j, box: box) { continue }
@@ -288,7 +298,7 @@ public enum SloExtractor {
         var added = 0
 
         if let fromBox = lines[from].box {
-            var currentBottom = fromBox.bottom
+            var current: Box = fromBox
             let maxGap = Double(fromBox.height) * 1.5
             while added < addressMaxContinuation {
                 var next: Int?
@@ -296,8 +306,8 @@ public enum SloExtractor {
                 for j in lines.indices where j != from {
                     guard let box = lines[j].box else { continue }
                     if lines[j].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
-                    if box.top < currentBottom { continue }
-                    if Double(box.top - currentBottom) > maxGap { continue }
+                    if !box.isBelow(current) { continue }
+                    if Double(box.gapBelow(current)) > maxGap { continue }
                     if !fromBox.sameColumn(box) { continue }
                     if box.top < nextTop {
                         nextTop = box.top
@@ -313,7 +323,7 @@ public enum SloExtractor {
                 // ラベル語彙に無い項目（勤務先など）でも同じ判定ができる。
                 if hasContentToLeft(lines, index: j, box: lines[j].box!) { break }
                 out += "　" + t.trimmingCharacters(in: .whitespacesAndNewlines)
-                currentBottom = lines[j].box!.bottom
+                current = lines[j].box!
                 added += 1
             }
             return out

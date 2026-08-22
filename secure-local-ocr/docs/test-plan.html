@@ -86,6 +86,39 @@
 </section>
 
 <section>
+  <h2>2-b. 実際の座標を使った抽出規則の検証（実施済み）</h2>
+  <p>
+    抽出規則の不具合には、手で書いた座標のテストでは出ないものがあります。
+    実際に出たのが、折り返した行の外接矩形が前の行と数ピクセル重なるために
+    住所の続きを取りこぼす問題です（振り返り 課題11）。
+    検証用サンプル画像を実際のOCRにかけ、返ってきた座標で抽出規則を通します。
+  </p>
+<pre><code>sudo apt-get install -y tesseract-ocr tesseract-ocr-jpn
+python3 tools/ocr_lines_from_image.py samples/test-form-01.png</code></pre>
+  <p>
+    出力は <code>protocol/testdata/extraction-vectors.json</code> の
+    <code>lines</code> と同じ形式なので、そのままベクタにできます。
+  </p>
+  <table>
+    <thead><tr><th>確認項目</th><th>合格条件</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr><td>表形式（test-form-01）</td><td>ラベルと値が正しく対応づく</td><td><span class="badge ok">合格</span>（OCR誤読の2項目を除き7項目）</td></tr>
+      <tr><td>ラベルが値の上（test-form-02）</td><td>直下のセルを値として拾う</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>住所の折り返し</td><td>重なった矩形でも連結する</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>1行に複数項目の小さい文字</td><td>—</td><td>住所が長くなる（既知・人間の確認で吸収）</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>この検証で確かめられないこと。</strong>
+    ここで使う Tesseract は、製品が使う ML Kit / Vision とは別のエンジンです。
+    読み取り精度も行の区切り方も違います。確かめられるのは
+    「実際の座標に対して抽出規則が正しく働くか」だけで、
+    <strong>OCR精度の検証にも、通信していないことの検証にもなりません</strong>。
+    実機での確認（L2）と通信の実測（L3・L4）を置き換えるものではありません。
+  </div>
+</section>
+
+<section>
   <h2>3. L3: 成果物の検証（実施済み）</h2>
 <pre><code>gradle :app:verifyOfflineFlavorHasNoInternet
 tools/verify_no_network.sh</code></pre>

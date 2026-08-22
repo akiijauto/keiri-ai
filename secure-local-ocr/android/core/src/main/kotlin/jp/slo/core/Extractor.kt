@@ -26,6 +26,18 @@ object Extractor {
         /** 横方向の重なりが半分以上なら「同じ列」とみなす。 */
         fun sameColumn(other: Box): Boolean = overlapRatio(left, right, other.left, other.right) >= 0.5
 
+        /**
+         * other より下の行にあるか。
+         *
+         * 折り返した行の外接矩形は、前の行と数ピクセル重なることがある
+         * （実際のOCR出力で確認）。`top >= other.bottom` で判定すると
+         * 折り返しを取りこぼすため、「同じ行ではなく、より下から始まる」で判定する。
+         */
+        fun isBelow(other: Box): Boolean = !sameRow(other) && top > other.top
+
+        /** other の下端からこの矩形の上端までの間隔。重なっている場合は0。 */
+        fun gapBelow(other: Box): Int = maxOf(0, top - other.bottom)
+
         private fun overlapRatio(aFrom: Int, aTo: Int, bFrom: Int, bTo: Int): Double {
             val span = minOf(aTo - aFrom, bTo - bFrom)
             if (span <= 0) return 0.0
@@ -204,8 +216,8 @@ object Extractor {
             if (j == labelIndex) continue
             val box = lines[j].box ?: continue
             if (lines[j].text.isBlank()) continue
-            if (box.top < labelBox.bottom) continue
-            if (box.top - labelBox.bottom > maxGap) continue
+            if (!box.isBelow(labelBox)) continue
+            if (box.gapBelow(labelBox) > maxGap) continue
             if (!labelBox.sameColumn(box)) continue
             if (findLabel(lines[j].text) != null) continue
             if (hasLabelToLeft(lines, j, box)) continue
@@ -261,7 +273,7 @@ object Extractor {
         var added = 0
 
         if (fromBox != null) {
-            var currentBottom = fromBox.bottom
+            var current: Box = fromBox
             val maxGap = fromBox.height * 1.5
             while (added < ADDRESS_MAX_CONTINUATION) {
                 var next: Int? = null
@@ -270,8 +282,8 @@ object Extractor {
                     if (j == from) continue
                     val box = lines[j].box ?: continue
                     if (lines[j].text.isBlank()) continue
-                    if (box.top < currentBottom) continue
-                    if (box.top - currentBottom > maxGap) continue
+                    if (!box.isBelow(current)) continue
+                    if (box.gapBelow(current) > maxGap) continue
                     if (!fromBox.sameColumn(box)) continue
                     if (box.top < nextTop) { nextTop = box.top; next = j }
                 }
@@ -284,7 +296,7 @@ object Extractor {
                 // ラベル語彙に無い項目（勤務先など）でも同じ判定ができる。
                 if (hasContentToLeft(lines, j, lines[j].box!!)) break
                 sb.append('　').append(t.trim())
-                currentBottom = lines[j].box!!.bottom
+                current = lines[j].box!!
                 added++
             }
             return sb.toString()
