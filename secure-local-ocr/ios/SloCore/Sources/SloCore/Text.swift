@@ -82,29 +82,36 @@ public enum SloText {
     }
 
     /// 半角カタカナを全角カタカナへ（濁点・半濁点を合成する）。
+    ///
+    /// Character（書記素クラスタ）ではなく Unicode スカラーで走査する。
+    /// Swift は半角カタカナと後続の半角濁点を1つの Character にまとめるため
+    /// （"ﾀﾞ" は Character 1個）、Character で引くと表に無く、変換されずに素通りする。
+    /// Kotlin 版は UTF-16 単位で走査しているので、この差を埋める必要がある。
     public static func halfwidthKatakanaToFullwidth(_ s: String) -> String {
-        let chars = Array(s)
-        var out = ""
+        let scalars = Array(s.unicodeScalars)
+        var out = String.UnicodeScalarView()
         var i = 0
-        while i < chars.count {
-            guard let base = halfwidthKatakana[chars[i]] else {
-                out.append(chars[i])
+        while i < scalars.count {
+            guard let base = halfwidthKatakana[Character(scalars[i])] else {
+                out.append(scalars[i])
                 i += 1
                 continue
             }
-            let next: Character? = i + 1 < chars.count ? chars[i + 1] : nil
-            if next == "ﾞ", dakuten.contains(base) {
-                out.append(base == "ウ" ? "ヴ" : shift(base, by: 1))
+            let next: Unicode.Scalar? = i + 1 < scalars.count ? scalars[i + 1] : nil
+            let composed: Character
+            if next == "\u{FF9E}", dakuten.contains(base) {          // 半角濁点
+                composed = base == "ウ" ? "ヴ" : shift(base, by: 1)
                 i += 2
-            } else if next == "ﾟ", handakuten.contains(base) {
-                out.append(shift(base, by: 2))
+            } else if next == "\u{FF9F}", handakuten.contains(base) { // 半角半濁点
+                composed = shift(base, by: 2)
                 i += 2
             } else {
-                out.append(base)
+                composed = base
                 i += 1
             }
+            out.append(contentsOf: composed.unicodeScalars)
         }
-        return out
+        return String(out)
     }
 
     public static func hiraganaToKatakana(_ s: String) -> String {

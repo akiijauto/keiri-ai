@@ -153,7 +153,7 @@ public enum SloNormalizer {
     private static let compactPattern = "^([0-9]{4})([0-9]{2})([0-9]{2})$"
     private static let emailPattern = "^[^@\\s]+@[^@\\s.]+(\\.[^@\\s.]+)+$"
     private static let customerPattern = "^[A-Z0-9-]{1,32}$"
-    private static let kanaPattern = "^[ァ-ヶー\\u{3000}]+$"
+    private static let kanaPattern = "^[ァ-ヶー\\u3000]+$"
 
     public static func normalize(_ field: String, _ input: String, today: SloDate = SloDate.today()) -> NormalizeResult {
         let s0 = SloText.stripControlChars(input)
@@ -261,14 +261,34 @@ public enum SloNormalizer {
 
     // MARK: - 正規表現ヘルパ
 
+    /// パターンは定数なので、組み立てに失敗するのはプログラムの誤り。
+    ///
+    /// 以前は `try?` で握りつぶしていたため、無効なパターン
+    /// （ICUが解さない `\u{3000}` を書いていた）が「一致しない」として
+    /// 静かに素通りし、正規化と抽出が丸ごと働いていないことに気づけなかった。
+    /// 握りつぶさず、その場で落とす。
+    private static var cache: [String: NSRegularExpression] = [:]
+    private static let cacheLock = NSLock()
+
+    static func regex(_ pattern: String) -> NSRegularExpression {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let re = cache[pattern] { return re }
+        guard let re = try? NSRegularExpression(pattern: pattern) else {
+            preconditionFailure("正規表現が不正です: \(pattern)")
+        }
+        cache[pattern] = re
+        return re
+    }
+
     static func matches(_ s: String, _ pattern: String) -> Bool {
-        guard let re = try? NSRegularExpression(pattern: pattern) else { return false }
+        let re = regex(pattern)
         let range = NSRange(s.startIndex..., in: s)
         return re.firstMatch(in: s, range: range) != nil
     }
 
     static func capture(_ s: String, _ pattern: String) -> [String]? {
-        guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let re = regex(pattern)
         let range = NSRange(s.startIndex..., in: s)
         guard let m = re.firstMatch(in: s, range: range) else { return nil }
         var groups: [String] = []

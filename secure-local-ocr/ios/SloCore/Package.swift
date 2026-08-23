@@ -11,8 +11,20 @@ let package = Package(
     products: [
         .library(name: "SloCore", targets: ["SloCore"])
     ],
+    dependencies: [
+        // Linux でのみ使う。Apple プラットフォームでは CryptoKit をそのまま使い、
+        // このパッケージはリンクされない（下の condition を参照）。
+        // 目的は共有ベクタを CI（Linux）で流せるようにすること。
+        // これが無いと Swift 実装だけ検証されないまま残る。
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0")
+    ],
     targets: [
-        .target(name: "SloCore"),
+        .target(
+            name: "SloCore",
+            dependencies: [
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux]))
+            ]
+        ),
         .testTarget(name: "SloCoreTests", dependencies: ["SloCore"])
     ]
 )

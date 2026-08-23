@@ -6,12 +6,33 @@ Android版で確立した業務仕様を、Swift + Vision Framework + SwiftUI �
 
 | 部分 | 状態 |
 |------|------|
-| `SloCore/`（正規化・抽出・Envelope・監査ログ） | 実装済み。Android/Web と同じ共通ベクタでテストを用意済み |
+| `SloCore/`（正規化・抽出・Envelope・監査ログ） | 実装済み。**Linux上で `swift test` 6件成功**。CIでも毎回流している |
 | `SecureLocalOcr/`（SwiftUIアプリ） | 実装済み。**実機・シミュレータでの動作確認は未実施** |
 
-> 本リポジトリの開発環境は Linux のため、Swift のビルドとテストは実行していない。
-> macOS 上で下記の手順を実行し、結果を `振り返り.html` に追記すること。
+> `SloCore` は UIKit/SwiftUI に依存しないため、Linux でもビルドとテストができる。
+> Android/Web と同じ共通ベクタを流して検証済み。
+>
+> 一方 `SecureLocalOcr/`（SwiftUIアプリ、Vision Framework）は Apple プラットフォームでしか
+> ビルドできないため、**未検証のまま**である。macOS 上で下記の手順を実行し、
+> 結果を `振り返り.html` に追記すること。
 > これは既知の未完了事項であり、Android MVP の合格条件には含めていない（原則9）。
+
+### 暗号ライブラリについて
+
+`Envelope` の HMAC-SHA256 は、Apple プラットフォームでは **CryptoKit** をそのまま使う。
+Linux でのテストのためだけに、Apple の [swift-crypto](https://github.com/apple/swift-crypto) を
+**Linux 限定の依存**として追加してある（`Package.swift` の `condition: .when(platforms: [.linux])`）。
+
+```swift
+#if canImport(CryptoKit)
+import CryptoKit   // iOS / iPadOS / macOS はこちら。出荷物に swift-crypto は入らない
+#else
+import Crypto      // Linux（CI）でのみ使う
+#endif
+```
+
+自前の暗号実装は置いていない。共有コアを検証しないまま残すより、
+Apple 自身が提供する API 互換ライブラリを検証専用に使うほうが安全と判断した。
 
 ## 共有コアのテスト
 

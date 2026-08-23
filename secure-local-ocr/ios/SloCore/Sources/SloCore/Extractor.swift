@@ -94,11 +94,11 @@ public enum SloExtractor {
     /// ラベルの右隣を探す横方向の上限。ラベル高さの倍数。離れすぎた列を誤って拾わない。
     static let maxGapInLabelHeights = 8.0
 
-    static let separators = "^[\\s\\u{3000}:：=・>＞\\]］|｜]+"
-    static let postalLine = "^[\\s\\u{3000}]*〒?[\\s\\u{3000}]*([0-9]{3}[-ー－][0-9]{4})[\\s\\u{3000}]*$"
+    static let separators = "^[\\s\\u3000:：=・>＞\\]］|｜]+"
+    static let postalLine = "^[\\s\\u3000]*〒?[\\s\\u3000]*([0-9]{3}[-ー－][0-9]{4})[\\s\\u3000]*$"
     static let phoneLine =
-        "^[\\s\\u{3000}]*[(（]?(0[0-9]{1,3})[)）]?[-ー－\\s]?([0-9]{2,4})[-ー－\\s]?([0-9]{4})[\\s\\u{3000}]*$"
-    static let emailLine = "^[\\s\\u{3000}]*([^\\s\\u{3000}@]+@[^\\s\\u{3000}@]+\\.[^\\s\\u{3000}@]+)[\\s\\u{3000}]*$"
+        "^[\\s\\u3000]*[(（]?(0[0-9]{1,3})[)）]?[-ー－\\s]?([0-9]{2,4})[-ー－\\s]?([0-9]{4})[\\s\\u3000]*$"
+    static let emailLine = "^[\\s\\u3000]*([^\\s\\u3000@]+@[^\\s\\u3000@]+\\.[^\\s\\u3000@]+)[\\s\\u3000]*$"
 
     public static func extract(
         lines: [Line],
@@ -353,7 +353,7 @@ public enum SloExtractor {
     }
 
     private static func replacingPattern(_ s: String, _ pattern: String, with replacement: String) -> String {
-        guard let re = try? NSRegularExpression(pattern: pattern) else { return s }
+        let re = SloNormalizer.regex(pattern)
         let range = NSRange(s.startIndex..., in: s)
         return re.stringByReplacingMatches(in: s, range: range, withTemplate: replacement)
     }

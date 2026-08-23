@@ -116,9 +116,9 @@
     <thead><tr><th>ID</th><th>要件</th><th>状態</th></tr></thead>
     <tbody>
       <tr><td>F-01</td><td>アプリ内のOCR専用カメラで撮影できる（写真アプリを経由しない）</td><td><span class="badge ok">実装済</span></td></tr>
-      <tr><td>F-02</td><td>端末内で画像補正（回転・切り出し・コントラスト）を行う</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-02</td><td>端末内で画像補正（回転・コントラスト）を行う。補正なしで読めなかったときだけコントラストを強調して再試行する</td><td><span class="badge ok">実装済</span></td></tr>
       <tr><td>F-03</td><td>端末内で日本語OCRを実行する</td><td><span class="badge ok">実装済</span></td></tr>
-      <tr><td>F-04</td><td>OCR結果から業務項目を抽出する</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-04</td><td>OCR結果から業務項目を抽出する。ラベルと値は行の並び順ではなく位置で対応づける</td><td><span class="badge ok">実装済</span></td></tr>
       <tr><td>F-05</td><td>抽出結果を項目ごとに表示し、信頼度の低い項目を警告する</td><td><span class="badge ok">実装済</span></td></tr>
       <tr><td>F-06</td><td>人間が値を修正でき、修正時に再検証する</td><td><span class="badge ok">実装済</span></td></tr>
       <tr><td>F-07</td><td>項目ごとに「確認」を付けるまで引き渡し対象にしない</td><td><span class="badge ok">実装済</span></td></tr>
@@ -285,6 +285,8 @@
       <tr><td>機能</td><td>日本語帳票を読み取れる</td><td>実帳票試験</td><td><span class="badge todo">実帳票未実施</span></td></tr>
       <tr><td>機能</td><td>OCR結果を修正できる</td><td>UI試験</td><td><span class="badge ok">実装済</span></td></tr>
       <tr><td>機能</td><td>Web入力を支援できる</td><td>ブラウザE2E</td><td><span class="badge ok">6件成功</span></td></tr>
+      <tr><td>機能</td><td>ラベルと値を正しく対応づける</td><td>実際のOCR座標での抽出試験</td><td><span class="badge ok">合格</span>（test-plan 2-b）</td></tr>
+      <tr><td>整合</td><td>Kotlin・JavaScript・Swift が同じ結果を返す</td><td>共通ベクタ（3実装）</td><td><span class="badge ok">合格</span>（Kotlin 7件 / JS 6件 / Swift 6件）</td></tr>
       <tr><td>セキュリティ</td><td>OCR画像を外部へ送信しない</td><td>権限検査＋pcap</td><td><span class="badge ok">静的検査合格</span> / <span class="badge todo">pcap未実施</span></td></tr>
       <tr><td>セキュリティ</td><td>OCR文字列を外部へ送信しない</td><td>権限検査＋pcap</td><td><span class="badge ok">静的検査合格</span> / <span class="badge todo">pcap未実施</span></td></tr>
       <tr><td>セキュリティ</td><td>外部AI APIを使用しない</td><td>依存関係の検査</td><td><span class="badge ok">合格</span></td></tr>

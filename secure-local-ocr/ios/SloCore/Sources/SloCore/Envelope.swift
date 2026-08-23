@@ -1,5 +1,11 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+// Linux で共有ベクタを流すため。API は CryptoKit と同一（Apple の swift-crypto）。
+// Apple プラットフォームではこちらは使われない（Package.swift の condition を参照）。
+import Crypto
+#endif
 
 /// 正準化JSON（RFC 8785 サブセット / SPEC.md 6.1）と Envelope（SPEC.md 3）。
 ///
@@ -89,10 +95,24 @@ public indirect enum SloJson: Equatable {
         return convert(obj)
     }
 
+    /// JSONSerialization が返した真偽値と数値を区別する。
+    ///
+    /// `true` は数値の1と同じ NSNumber として渡ってくるため、型だけでは区別できない。
+    /// Apple では CFBoolean かどうかで判定する。CFGetTypeID は Apple 固有なので、
+    /// それ以外の環境（Linux 上で共有ベクタを流すとき）は Objective-C の型符号で判定する。
+    /// JSON の true/false は C の char（'c' = 99）として符号化される。
+    static func isBoolean(_ n: NSNumber) -> Bool {
+        #if canImport(Darwin)
+        return CFGetTypeID(n) == CFBooleanGetTypeID()
+        #else
+        return n.objCType.pointee == 99
+        #endif
+    }
+
     static func convert(_ any: Any) -> SloJson {
         if any is NSNull { return .null }
         if let n = any as? NSNumber {
-            if CFGetTypeID(n) == CFBooleanGetTypeID() { return .bool(n.boolValue) }
+            if isBoolean(n) { return .bool(n.boolValue) }
             return .number(n.doubleValue)
         }
         if let s = any as? String { return .string(s) }
@@ -350,6 +370,13 @@ public enum SloRfc3339 {
             for m in 1..<month { days += SloDate.daysInMonth(y, m) }
         }
         days += (Int(g[3]) ?? 1) - 1
-        return days * secondsPerDay + (Int(g[4]) ?? 0) * 3600 + (Int(g[5]) ?? 0) * 60 + (Int(g[6]) ?? 0)
+
+        // 1つの式にまとめると Swift の型検査が現実的な時間で終わらない
+        // （swift 6.0.3 で "unable to type-check this expression" になる）。
+        let hours = Int(g[4]) ?? 0
+        let minutes = Int(g[5]) ?? 0
+        let seconds = Int(g[6]) ?? 0
+        let secondsOfDay = hours * 3600 + minutes * 60 + seconds
+        return days * secondsPerDay + secondsOfDay
     }
 }

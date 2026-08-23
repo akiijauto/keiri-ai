@@ -10,6 +10,15 @@ final class VectorTests: XCTestCase {
     /// ベクタの判定が実行日に左右されないよう固定日を使う（他実装のテストと同じ日）。
     let fixedToday = SloDate(year: 2026, month: 8, day: 22)
 
+    /// ベクタが読めないことは「検証できなかった」であって「合格」ではない。
+    ///
+    /// 以前は XCTSkip にしていたため、ベクタが見つからないと6件中3件が
+    /// 静かに飛ばされ、テストは成功と表示されていた。
+    /// 何も検証していないのに緑になる状態を避けるため、失敗として扱う。
+    struct VectorsUnavailable: Error, CustomStringConvertible {
+        let description: String
+    }
+
     private func testdataDirectory() throws -> URL {
         var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
@@ -17,14 +26,14 @@ final class VectorTests: XCTestCase {
             if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
             dir = dir.deletingLastPathComponent()
         }
-        throw XCTSkip("protocol/testdata が見つかりません")
+        throw VectorsUnavailable(description: "protocol/testdata が見つかりません")
     }
 
     private func load(_ name: String) throws -> [String: Any] {
         let url = try testdataDirectory().appendingPathComponent(name)
         let data = try Data(contentsOf: url)
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw XCTSkip("\(name) の形式が不正です")
+            throw VectorsUnavailable(description: "\(name) の形式が不正です")
         }
         return obj
     }

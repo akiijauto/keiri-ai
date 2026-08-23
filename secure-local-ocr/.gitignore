@@ -5,6 +5,8 @@ android/*/build/
 android/local.properties
 android/.idea/
 ios/build/
+ios/SloCore/.build/
+ios/SloCore/Package.resolved
 ios/*.xcodeproj/xcuserdata/
 web/node_modules/
 web/.playwright/

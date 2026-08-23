@@ -52,6 +52,17 @@ jobs:
         working-directory: secure-local-ocr/web
         run: node --test tests/vectors.test.mjs
 
+      # Swift実装だけ未検証で残ると、3実装が同じ規則を守るという前提が崩れる。
+      # 実際、検証していなかった間に正規表現と半角カナ変換が丸ごと働いていなかった（振り返り 課題12）。
+      # Apple の実機ビルドはここでは行えないが、共有ベクタは同じものを流せる。
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
+
+      - name: Swift共有コアのテスト（共通ベクタ）
+        working-directory: secure-local-ocr/ios/SloCore
+        run: swift test
+
       - name: ブラウザE2E
         working-directory: secure-local-ocr/web
         run: |

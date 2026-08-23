@@ -513,6 +513,102 @@ await page.evaluate(async (envelope) =&gt; { await window.SLO._deliver(envelope)
 </section>
 
 <section>
+  <h2>課題12: Swift実装は一度も動かしていなかった</h2>
+
+  <h4>何が起きたか</h4>
+  <p>
+    「3つの実装が同じ共通ベクタを通る」ことが、この設計の中心にある担保です。
+    ところが Swift 実装だけは、<strong>一度もコンパイルすら通していませんでした</strong>。
+    開発環境が Linux で、Swift のツールチェーンが無かったためです。
+    「macOS で確認すること」と README に書いて先へ進んでいました。
+  </p>
+  <p>
+    Linux 用の Swift ツールチェーンを入れて実行してみたところ、
+    <code>SloCore</code> は UIKit にも SwiftUI にも依存していないため、そのまま動きました。
+    そして<strong>6件中3件が失敗</strong>しました。
+  </p>
+
+  <h4>原因1: 正規表現が1つも動いていなかった</h4>
+  <p>
+    Kotlin から移すときに、全角スペースを <code>\u{3000}</code> と書いていました。
+    これは <strong>Swift の文字列リテラルの書き方</strong>であって、正規表現の書き方ではありません。
+    <code>"\\u{3000}"</code> と書いた結果、正規表現エンジン（ICU）へは
+    <code>\u{3000}</code> という文字列がそのまま渡り、ICU はこれを解せません。
+  </p>
+  <p>
+    そして <code>try? NSRegularExpression(...)</code> と書いていたため、
+    <strong>組み立てに失敗しても例外にならず、「一致しなかった」として静かに素通り</strong>していました。
+    区切り記号の除去、郵便番号・電話番号・メールアドレスのパターン照合、カナの検証——
+    正規表現を使う処理が丸ごと働いていませんでした。
+  </p>
+<pre><code>extract-01-residency/email: ':taro.yamada@example.co.jp' != 'taro.yamada@example.co.jp'
+extract-03-pattern-only/postal_code: 抽出されませんでした
+kana-01: エラー E_VALIDATION（期待値 'ヤマダ　タロウ'）</code></pre>
+  <p>
+    <code>\u3000</code>（ICUの書き方）へ直し、あわせて
+    <strong>握りつぶしをやめました</strong>。パターンは定数なので、
+    組み立てに失敗するのはプログラムの誤りです。その場で落とすようにしています。
+  </p>
+
+  <h4>原因2: Swiftの「文字」はKotlinの「文字」ではない</h4>
+  <p>
+    半角カナの濁点合成（<code>ﾀ</code> + <code>ﾞ</code> → <code>ダ</code>）が働いていませんでした。
+    Kotlin 版は UTF-16 単位で1文字ずつ見ますが、
+    Swift の <code>Character</code> は<strong>書記素クラスタ</strong>です。
+  </p>
+<pre><code>"ヤマﾀﾞ" → Character数: 3  [ヤ][マ][ﾀﾞ]   ← ﾀ と ﾞ が1文字にまとまる
+            scalar数: 4</code></pre>
+  <p>
+    <code>ﾀﾞ</code> という2スカラーの塊で変換表を引くので、当然見つかりません。
+    見つからなければ「変換不要」として素通りします。
+    Unicode スカラー単位の走査へ直しました。
+  </p>
+
+  <h4>解決</h4>
+  <p>
+    直したうえで <code>swift test</code> は<strong>6件すべて成功</strong>します。
+    Swift 実装が Kotlin 実装と同じ結果を返すことを、初めて確かめられました。
+  </p>
+  <p>
+    再発しないよう、CI に Swift のテストを追加しました。
+    ひとつ障害がありました。<code>Envelope</code> の HMAC は CryptoKit を使っており、
+    これは Apple プラットフォーム専用です。
+    自前で SHA-256 を書くこともできますが、セキュリティを目的とした製品に
+    検証用の暗号実装を置くのは筋が悪いと判断し、
+    Apple 自身が出している <strong>swift-crypto を Linux 限定の依存</strong>として追加しました。
+    Apple プラットフォームでは従来どおり CryptoKit を使い、出荷物には入りません。
+  </p>
+
+  <h4>ついでに見つかった2件</h4>
+  <ul>
+    <li><code>Envelope.swift</code> の日付計算に、Swift の型検査が現実的な時間で終わらない式がありました
+        （<em>unable to type-check this expression in reasonable time</em>）。
+        Xcode でも同じ問題が出た可能性が高い箇所です。式を分割しました</li>
+    <li>共通ベクタが見つからないとき <code>XCTSkip</code> で飛ばしていました。
+        <strong>6件中3件が静かに飛ばされたまま「成功」と表示されます</strong>。
+        検証できなかったことは合格ではないので、失敗として扱うよう直しました</li>
+  </ul>
+
+  <h4>学び</h4>
+  <blockquote>
+    「後で macOS で確認する」と書いた時点で、それは検証していないのと同じだった。
+    しかも SloCore は UIKit に依存しておらず、
+    <strong>やってみれば Linux でそのまま動いた</strong>。
+    できない理由だと思っていたものが、確かめていない思い込みだった。
+  </blockquote>
+  <blockquote>
+    失敗を握りつぶす <code>try?</code> と、検証不能を成功に見せる <code>XCTSkip</code>。
+    どちらも「静かに緑になる」仕組みで、同じ日に両方見つかった。
+    テストが緑であることと、検証できていることは違う。
+  </blockquote>
+  <blockquote>
+    移植は「同じことを書く」作業に見えて、実際は言語ごとの前提の差を踏み抜く作業だった。
+    正規表現の記法も、文字の単位も、Kotlin と Swift では違う。
+    同じベクタを流して初めて、その差が見える。
+  </blockquote>
+</section>
+
+<section>
   <h2>設計判断の記録</h2>
 
   <h3>なぜ通信の有無を「ビルド構成」で分けたか</h3>
