@@ -154,7 +154,10 @@ brew install xcodegen
 xcodegen generate
 open SecureLocalOcr.xcodeproj</code></pre>
   <p class="note">
-    現時点で Swift のビルドとテストは<strong>未実行</strong>です（開発環境がLinuxのため）。
+    共有コア <code>SloCore</code> は UIKit/SwiftUI に依存しないため <strong>Linux でも
+    <code>swift test</code> が通ります</strong>（6件成功。CIでも毎回実行しています）。
+    一方 <code>SecureLocalOcr/</code>（SwiftUIアプリ・Vision Framework）は
+    Apple プラットフォームでしかビルドできず、<strong>動作確認は未実施</strong>です。
     詳細は <code>ios/README.md</code> を参照してください。
   </p>
 </section>
