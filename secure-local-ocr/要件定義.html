@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>要件定義 — Secure Local OCR</title>
+<link rel="stylesheet" href="docs/doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>要件定義書</h1>
+  <div class="meta">Secure Local OCR（完全オンデバイスOCR入力支援システム）／ 版 0.1 ／ 2026-08-22</div>
+  <nav>
+    <a href="README.html">README</a>
+    <a href="振り返り.html">振り返り</a>
+    <a href="docs/architecture.html">アーキテクチャ</a>
+    <a href="docs/security-design.html">セキュリティ設計</a>
+    <a href="docs/threat-model.html">脅威モデル</a>
+    <a href="docs/test-plan.html">テスト計画</a>
+  </nav>
+</header>
+
+<main>
+
+<section>
+  <h2>1. 目的と適用範囲</h2>
+  <p>
+    個人情報・機密情報を含む紙資料をスマートフォン／タブレットで読み取り、
+    <strong>OCR処理から確認までを端末内で完結</strong>させたうえで、
+    人間が確認した項目だけを所定のWebサイトへ入力する仕組みを構築する。
+  </p>
+  <p>
+    本システムの対象業務は「お客様が記入した書類の内容を、業務Webシステムへ登録する」作業である。
+    書類の撮影・読み取り・確認は端末内で行い、登録のためにWebサイトへ入力する段階でのみ通信を許可する。
+  </p>
+
+  <h3>1.1 適用範囲外</h3>
+  <ul>
+    <li>読み取ったデータを自社サーバへ集約・蓄積すること（本システムは中継も蓄積も行わない）</li>
+    <li>登録の完全自動化（送信ボタンは常に人間が押す）</li>
+    <li>本リポジトリ内の別企画（請求書仕訳AI）との機能連携。<strong>両者は独立しており、コードもデータも共有しない</strong></li>
+  </ul>
+</section>
+
+<section>
+  <h2>2. 最重要原則</h2>
+  <p>機能要件よりセキュリティ要件を優先する。以下は設計上の不変条件であり、
+     利便性を理由に緩めない。</p>
+  <table>
+    <thead><tr><th>ID</th><th>原則</th><th>実装上の担保</th></tr></thead>
+    <tbody>
+      <tr><td>原則1</td><td>個人情報を外部OCRへ送信しない</td><td>OCRはML Kit（モデル同梱）／Vision（端末内強制）のみ。外部OCR SDKを依存に含めない</td></tr>
+      <tr><td>原則2</td><td>個人情報を生成AIへ送信しない</td><td>生成AIのSDK・APIクライアントを一切依存に含めない</td></tr>
+      <tr><td>原則3</td><td>OCRは端末内で完結させる</td><td>Android: 同梱モデル／iOS: <code>requiresOnDeviceRecognition = true</code></td></tr>
+      <tr><td>原則4</td><td>OCRフェーズとWeb通信フェーズを分離する</td><td>Androidは<code>offline</code>フレーバーがINTERNET権限を持たない</td></tr>
+      <tr><td>原則5</td><td>OCR結果を人間が確認してからWeb入力する</td><td>確認チェックが付いた項目だけがEnvelopeに載る（INV-1）</td></tr>
+      <tr><td>原則6</td><td>不要な個人情報を保存しない</td><td>原画像はOCR直後に破棄。項目値はメモリのみ</td></tr>
+      <tr><td>原則7</td><td>個人情報をログへ記録しない</td><td>監査ログは値を検査し、個人情報らしき文字列を拒否（INV-5）</td></tr>
+      <tr><td>原則8</td><td>通信していないことを実測して検証する</td><td>ビルド時の権限検査＋実端末のpcap解析</td></tr>
+      <tr><td>原則9</td><td>Androidを先行開発し、確立した仕様をiPhone/iPadへ展開する</td><td>共有コアを3言語で実装し、共通ベクタで一致を検証</td></tr>
+      <tr><td>原則10</td><td>セキュリティ要件を機能要件より優先する</td><td>本書および脅威モデルで判断基準を明示</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>3. 業務要件</h2>
+
+  <h3>3.1 業務フロー</h3>
+<pre class="diagram">紙資料（お客様の記入済み書類）
+   │
+   ├─ 取込元A: OCRアプリ（Android / iPhone / iPad）
+   │     撮影 → 画像補正 → 端末内OCR → 項目抽出 → 人間の確認・修正
+   │
+   └─ 取込元B: 入居フォーム等のWeb入力
+         直接入力 → 同じ正規化・検証 → 人間の確認
+                     │
+                     ▼
+          確認済みデータ（SLO Handoff Envelope）
+                     │
+                     ▼
+          登録先の業務Webサイト
+          検証 → 入力欄へ充填 → 人間が内容を確認 → 人間が送信</pre>
+
+  <h3>3.2 対象項目</h3>
+  <p>Profile <code>jp.personal.basic/1</code> として定義する。正規化・検証規則は取込元と登録先で共通とする。</p>
+  <table>
+    <thead><tr><th>キー</th><th>項目</th><th>正規形</th><th>検証</th></tr></thead>
+    <tbody>
+      <tr><td><code>name</code></td><td>氏名</td><td>全角、姓名間は全角スペース1個</td><td>1〜64文字、数字を含まない</td></tr>
+      <tr><td><code>name_kana</code></td><td>フリガナ</td><td>全角カタカナ</td><td>全角カタカナと全角スペースのみ</td></tr>
+      <tr><td><code>birthday</code></td><td>生年月日</td><td><code>YYYY-MM-DD</code></td><td>実在日付、1900-01-01〜本日</td></tr>
+      <tr><td><code>postal_code</code></td><td>郵便番号</td><td><code>NNN-NNNN</code></td><td>数字7桁</td></tr>
+      <tr><td><code>address</code></td><td>住所</td><td>全角（数字とハイフンは半角）</td><td>1〜128文字</td></tr>
+      <tr><td><code>phone</code></td><td>電話番号</td><td>数字のみ</td><td>先頭0、10桁または11桁</td></tr>
+      <tr><td><code>email</code></td><td>メールアドレス</td><td>半角小文字</td><td>形式検査、254文字以下</td></tr>
+      <tr><td><code>customer_no</code></td><td>顧客番号</td><td>半角大文字</td><td>英数とハイフン、1〜32文字</td></tr>
+      <tr><td><code>move_in_date</code></td><td>入居予定日</td><td><code>YYYY-MM-DD</code></td><td>実在日付</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3.3 帳票種別と必須項目</h3>
+  <table>
+    <thead><tr><th>document_type</th><th>用途</th><th>必須項目</th></tr></thead>
+    <tbody>
+      <tr><td><code>residency_application</code></td><td>入居申込</td><td>氏名・フリガナ・生年月日・郵便番号・住所・電話番号</td></tr>
+      <tr><td><code>contact_registration</code></td><td>連絡先登録</td><td>氏名・電話番号</td></tr>
+      <tr><td><code>generic</code></td><td>汎用</td><td>なし</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>4. 機能要件</h2>
+  <table>
+    <thead><tr><th>ID</th><th>要件</th><th>状態</th></tr></thead>
+    <tbody>
+      <tr><td>F-01</td><td>アプリ内のOCR専用カメラで撮影できる（写真アプリを経由しない）</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-02</td><td>端末内で画像補正（回転・コントラスト）を行う。補正なしで読めなかったときだけコントラストを強調して再試行する</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-03</td><td>端末内で日本語OCRを実行する</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-04</td><td>OCR結果から業務項目を抽出する。ラベルと値は行の並び順ではなく位置で対応づける</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-05</td><td>抽出結果を項目ごとに表示し、信頼度の低い項目を警告する</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-06</td><td>人間が値を修正でき、修正時に再検証する</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-07</td><td>項目ごとに「確認」を付けるまで引き渡し対象にしない</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-08</td><td>必須項目の不足を検出して知らせる</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-09</td><td>確認済み項目を表示し、項目ごとにコピーできる（Level 1/2）</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-10</td><td>登録先Webフォームの入力欄へ充填できる（Level 3/4）</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-11</td><td>登録の送信は人間が行う（自動送信しない）</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-12</td><td>操作の監査ログを端末内に残す（値を含まない）</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-13</td><td>Web入力（入居フォーム等）の内容も同じ形式で登録先へ渡せる</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>F-14</td><td>複数帳票テンプレートの管理</td><td><span class="badge todo">将来</span></td></tr>
+      <tr><td>F-15</td><td>QR／バーコード読取</td><td><span class="badge todo">将来</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>5. 受け渡しプロトコル要件</h2>
+  <p>
+    取込元が変わっても登録先が変わらずに済むよう、受け渡しの契約を1つに定める。
+    詳細は <code>protocol/SPEC.md</code>、機械可読な定義は <code>protocol/slo-handoff-v1.schema.json</code>。
+  </p>
+
+  <h3>5.1 不変条件</h3>
+  <table>
+    <thead><tr><th>ID</th><th>不変条件</th></tr></thead>
+    <tbody>
+      <tr><td>INV-1</td><td>人間が確認した項目だけがEnvelopeに載る</td></tr>
+      <tr><td>INV-2</td><td>Envelopeに原画像・OCR生テキスト全文を含めない</td></tr>
+      <tr><td>INV-3</td><td>失効時刻を過ぎたEnvelopeは無条件に破棄する</td></tr>
+      <tr><td>INV-4</td><td>登録先は入力欄を埋めるところまで。自動送信しない</td></tr>
+      <tr><td>INV-5</td><td>監査ログに項目値を書かない</td></tr>
+      <tr><td>INV-6</td><td>正規化・検証は取込元と登録先の双方で実行し、一致しなければ拒否する</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 受け渡し手段</h3>
+  <table>
+    <thead><tr><th>ID</th><th>手段</th><th>Level</th><th>通信</th><th>完全性検証</th></tr></thead>
+    <tbody>
+      <tr><td>T1</td><td>画面表示（人間が転記）</td><td>1</td><td>不要</td><td>不要</td></tr>
+      <tr><td>T2</td><td>項目ごとのコピー</td><td>2</td><td>不要</td><td>不要</td></tr>
+      <tr><td>T3</td><td>アプリ内WebViewへの充填</td><td>3–4</td><td>登録先のみ</td><td>HMAC-SHA256 必須</td></tr>
+      <tr><td>T4</td><td>ループバック（127.0.0.1）</td><td>3–4</td><td>端末内のみ</td><td>HMAC-SHA256 必須</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.3 Web入力元との連携</h3>
+  <p>
+    入居フォーム等でWeb入力された内容も、<code>source.kind = "web-form"</code> として
+    <strong>同一のEnvelope</strong>に載せる。登録先は取込元を意識せず、受け口を1つ実装すればよい。
+    正規化規則・検証手順・監査ログの経路はOCR由来と完全に共通とする。
+  </p>
+</section>
+
+<section>
+  <h2>6. 非機能要件</h2>
+  <table>
+    <thead><tr><th>区分</th><th>要件</th><th>目標</th></tr></thead>
+    <tbody>
+      <tr><td>性能</td><td>撮影からOCR結果表示まで</td><td>3秒以内（実端末で計測。<span class="badge todo">未計測</span>）</td></tr>
+      <tr><td>性能</td><td>項目抽出</td><td>100ms以内（端末内ルールベース処理）</td></tr>
+      <tr><td>可用性</td><td>ネットワーク接続がなくても撮影〜確認まで完了できる</td><td>必須</td></tr>
+      <tr><td>精度</td><td>活字の日本語帳票からの必須項目抽出</td><td>実帳票で検証のうえ確定（<span class="badge todo">未検証</span>）</td></tr>
+      <tr><td>精度</td><td>手書き文字</td><td>別途精度検証。MVPの合格条件に含めない</td></tr>
+      <tr><td>保守性</td><td>業務ロジックはOS非依存の共有コアに置く</td><td>必須</td></tr>
+      <tr><td>移植性</td><td>Android / iOS / Web の判定結果が一致する</td><td>共通テストベクタで検証</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>7. セキュリティ要件</h2>
+  <table>
+    <thead><tr><th>ID</th><th>要件</th><th>実装</th><th>状態</th></tr></thead>
+    <tbody>
+      <tr><td>S-01</td><td>OCRフェーズで外部通信を行わない</td><td>offlineフレーバーはINTERNET権限なし</td><td><span class="badge ok">実装・検証済</span></td></tr>
+      <tr><td>S-02</td><td>外部OCR API・生成AI APIを使用しない</td><td>依存に含めない</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-03</td><td>解析SDK・広告SDK・外部ログ収集を組み込まない</td><td>依存に含めない</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-04</td><td>アプリ起動時に認証する</td><td>BiometricPrompt / LocalAuthentication</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-05</td><td>一定時間経過後に再認証し、扱っていた値を破棄する</td><td>猶予3分</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-06</td><td>スクリーンショット・画面録画を抑止する</td><td>Android: FLAG_SECURE ／ iOS: 部分的</td><td><span class="badge warn">iOSは限定的</span></td></tr>
+      <tr><td>S-07</td><td>クラウドバックアップ・端末間転送を禁止する</td><td>dataExtractionRules / isExcludedFromBackup</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-08</td><td>原画像をOCR後に破棄する</td><td>メモリ上のみ、直後にrecycle</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-09</td><td>クリップボードの利用を制限する</td><td>機微フラグ付与／iOSは有効期限60秒・端末内限定</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-10</td><td>通信先を許可リストに限定する</td><td>networkSecurityConfig／ATS／ブリッジのオリジン検証</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>S-11</td><td>監査ログに個人情報を記録しない</td><td>属性キーと値を実行時検査</td><td><span class="badge ok">実装・検証済</span></td></tr>
+      <tr><td>S-12</td><td>Root化／Jailbreak端末での利用を抑止する</td><td>簡易検出＋MDM運用</td><td><span class="badge warn">簡易検出のみ</span></td></tr>
+      <tr><td>S-13</td><td>引き渡しの改ざん・リプレイを検知する</td><td>HMAC＋nonce＋失効＋handoff_id重複拒否</td><td><span class="badge ok">実装・検証済</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>S-06 の限界について。</strong>
+    iOSにはAndroidの<code>FLAG_SECURE</code>に相当する、スクリーンショットを禁止するAPIが存在しない。
+    アプリ側でできるのはアプリスイッチャーでの内容秘匿までである。
+    実運用では管理対象端末（MDM）側の制限と併用することを前提とする。
+    「アプリだけで防げる」と誤解しないよう、ここに明記する。
+  </div>
+</section>
+
+<section>
+  <h2>8. ネットワーク要件</h2>
+  <h3>8.1 フェーズ分離</h3>
+  <table>
+    <thead><tr><th>フェーズ</th><th>処理</th><th>通信</th></tr></thead>
+    <tbody>
+      <tr><td>Phase A</td><td>撮影・画像補正・OCR・項目抽出・確認</td><td><strong>不要</strong>。offlineビルドでは権限そのものが無い</td></tr>
+      <tr><td>Phase B</td><td>登録先Webサイトへの入力</td><td>許可リストのドメインのみ</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.2 許可リスト</h3>
+  <table>
+    <thead><tr><th>区分</th><th>宛先</th><th>備考</th></tr></thead>
+    <tbody>
+      <tr><td>ALLOW</td><td>業務Webサイト</td><td>本番ドメインを Phase 4 で確定する</td></tr>
+      <tr><td>ALLOW</td><td>認証に不可欠なドメイン</td><td>対象サイトの実装を調査のうえ追加</td></tr>
+      <tr><td>ALLOW</td><td>127.0.0.1 / 10.0.2.2</td><td>開発ビルドのみ。運用ビルドでは外す</td></tr>
+      <tr><td>DENY</td><td>上記以外すべて</td><td>平文通信は全面禁止</td></tr>
+    </tbody>
+  </table>
+  <p class="note">
+    現時点の許可リストはデモ用の値（<code>form.example.co.jp</code>）である。
+    対象サイトが使うCDN・CAPTCHA・認証基盤のドメインは Phase 4 の調査で確定する。
+  </p>
+</section>
+
+<section>
+  <h2>9. プラットフォーム要件</h2>
+  <table>
+    <thead><tr><th>項目</th><th>Android</th><th>iOS / iPadOS</th></tr></thead>
+    <tbody>
+      <tr><td>最低対応</td><td>Android 8.0（API 26）</td><td>iOS 16.0</td></tr>
+      <tr><td>UI</td><td>Kotlin + Jetpack Compose</td><td>Swift + SwiftUI</td></tr>
+      <tr><td>カメラ</td><td>CameraX</td><td>VisionKit 書類スキャナ</td></tr>
+      <tr><td>OCR</td><td>ML Kit 日本語（モデル同梱）</td><td>Vision Framework（端末内強制）</td></tr>
+      <tr><td>認証</td><td>BiometricPrompt</td><td>LocalAuthentication</td></tr>
+      <tr><td>Web連携</td><td>WebView + JSインターフェース</td><td>WKWebView + ScriptMessageHandler</td></tr>
+      <tr><td>保存</td><td>アプリ専用領域（バックアップ除外）</td><td>Application Support（バックアップ除外）</td></tr>
+      <tr><td>業務ロジック</td><td><code>:core</code>（Kotlin/JVM）</td><td><code>SloCore</code>（Swift）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>10. Web連携要件</h2>
+  <ul>
+    <li>登録先サイトは <code>slo-bridge.js</code> を読み込むだけで受け口が成立すること</li>
+    <li>項目とフォーム入力欄の対応は、サイトごとのマッピング定義ファイルで管理すること</li>
+    <li>マッピングが無い項目は自動推定してよいが、推定で埋めた欄は画面上で区別すること</li>
+    <li>登録先の表記（<code>YYYY/MM/DD</code>、郵便番号2分割、電話番号3分割など）への変換はブリッジ側で行うこと</li>
+    <li>許可リスト外のオリジンからの引き渡しは、理由を返さずに破棄すること</li>
+  </ul>
+</section>
+
+<section>
+  <h2>11. テスト要件と合格基準</h2>
+
+  <h3>11.1 MVP合格条件</h3>
+  <table>
+    <thead><tr><th>区分</th><th>条件</th><th>判定方法</th><th>現状</th></tr></thead>
+    <tbody>
+      <tr><td>機能</td><td>Android端末単体でOCRできる</td><td>実端末試験</td><td><span class="badge todo">実端末未実施</span></td></tr>
+      <tr><td>機能</td><td>日本語帳票を読み取れる</td><td>実帳票試験</td><td><span class="badge todo">実帳票未実施</span></td></tr>
+      <tr><td>機能</td><td>OCR結果を修正できる</td><td>UI試験</td><td><span class="badge ok">実装済</span></td></tr>
+      <tr><td>機能</td><td>Web入力を支援できる</td><td>ブラウザE2E</td><td><span class="badge ok">6件成功</span></td></tr>
+      <tr><td>機能</td><td>ラベルと値を正しく対応づける</td><td>実際のOCR座標での抽出試験</td><td><span class="badge ok">合格</span>（test-plan 2-b）</td></tr>
+      <tr><td>整合</td><td>Kotlin・JavaScript・Swift が同じ結果を返す</td><td>共通ベクタ（3実装）</td><td><span class="badge ok">合格</span>（Kotlin 7件 / JS 6件 / Swift 6件）</td></tr>
+      <tr><td>セキュリティ</td><td>OCR画像を外部へ送信しない</td><td>権限検査＋pcap</td><td><span class="badge ok">静的検査合格</span> / <span class="badge todo">pcap未実施</span></td></tr>
+      <tr><td>セキュリティ</td><td>OCR文字列を外部へ送信しない</td><td>権限検査＋pcap</td><td><span class="badge ok">静的検査合格</span> / <span class="badge todo">pcap未実施</span></td></tr>
+      <tr><td>セキュリティ</td><td>外部AI APIを使用しない</td><td>依存関係の検査</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>セキュリティ</td><td>不要なクラウド同期を行わない</td><td>設定検査</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>セキュリティ</td><td>個人情報をログへ記録しない</td><td>自動テスト</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>ネットワーク</td><td>実測でOCRフェーズの外部通信がないこと</td><td>pcap解析</td><td><span class="badge todo">実端末未実施</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>実端末試験が未実施であることについて。</strong>
+    本開発環境（Linuxコンテナ）には Android 実端末も macOS も存在しないため、
+    実端末でのOCR精度・処理速度・通信監視は実施できていない。
+    手順と判定基準は <a href="docs/test-plan.html">テスト計画</a> に定義済みであり、
+    実端末が用意でき次第そのまま実行できる状態にしてある。
+    <strong>この項目が埋まるまで MVP は「合格」ではない。</strong>
+  </div>
+
+  <h3>11.2 自動テストの現状</h3>
+  <table>
+    <thead><tr><th>対象</th><th>内容</th><th>件数</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr><td>Kotlin（Android共有コア）</td><td>正規化61件・抽出6件・正準化/HMAC6件・Envelope・監査ログ</td><td>7テスト</td><td><span class="badge ok">成功</span></td></tr>
+      <tr><td>JavaScript（Web）</td><td>同じ共通ベクタ＋Envelope＋必須項目</td><td>6テスト</td><td><span class="badge ok">成功</span></td></tr>
+      <tr><td>Swift（iOS共有コア）</td><td>同じ共通ベクタ（macOSで実行）</td><td>6テスト</td><td><span class="badge todo">未実行</span></td></tr>
+      <tr><td>ブラウザE2E</td><td>充填・失効拒否・改ざん拒否・別オリジン拒否・CSP・外部通信ゼロ</td><td>6テスト</td><td><span class="badge ok">成功</span></td></tr>
+      <tr><td>ビルド検証</td><td>offline APKにINTERNET権限が無いこと</td><td>1</td><td><span class="badge ok">成功</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>12. 運用要件</h2>
+  <ul>
+    <li>実運用では個人所有端末ではなく業務専用端末を使用する</li>
+    <li>MDMにより、クラウド同期・USB転送・スクリーンショット・外部共有を制御する</li>
+    <li>監査ログは端末内に保持し、値を含まないことを前提に持ち出し可能とする</li>
+    <li>撮影画像・OCR結果・pcapなど個人情報を含み得るデータはリポジトリへ保存しない</li>
+    <li>テストデータはすべて架空データとする</li>
+  </ul>
+</section>
+
+<section>
+  <h2>13. 用語</h2>
+  <table>
+    <thead><tr><th>用語</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td>取込元（Source）</td><td>確認済みデータを生成する主体。OCRアプリ、入居フォーム、手入力</td></tr>
+      <tr><td>登録先（Target）</td><td>確認済みデータを受け取る業務Webサイトのフォーム</td></tr>
+      <tr><td>Envelope</td><td>受け渡し1回分のデータ単位</td></tr>
+      <tr><td>Profile</td><td>項目集合と正規化・検証規則の版番号付き定義</td></tr>
+      <tr><td>フレーバー</td><td>Androidのビルド構成。<code>offline</code>と<code>web</code>の2種</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+<footer class="doc">
+  Secure Local OCR 要件定義書 版0.1 ／ 本書に登場する個人情報はすべて架空のものです。
+</footer>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "secure-local-ocr-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SLO Handoff Protocol の Web 側参照実装（登録先サイト・入居フォーム・ブリッジ）",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/vectors.test.mjs",
+    "test:e2e": "node --test tests/e2e.spec.mjs",
+    "test:all": "node --test tests/"
+  },
+  "engines": { "node": ">=20" }
+}

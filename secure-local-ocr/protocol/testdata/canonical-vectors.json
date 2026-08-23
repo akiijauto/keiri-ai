@@ -1,0 +1,47 @@
+{
+  "comment": "正準化JSON(RFC 8785サブセット)とHMAC-SHA256の共通テストベクタ。tools/gen_canonical_vectors.py が生成する。個人情報はすべて架空データ。",
+  "cases": [
+    {
+      "id": "canon-01-key-order",
+      "input": "{\"b\":1,\"a\":2,\"A\":3,\"_\":4}",
+      "canonical": "{\"A\":3,\"_\":4,\"a\":2,\"b\":1}",
+      "hmac_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "hmac_b64url": "fx_MqO0SX7My9rABQAkLvaSeFxcUJHPLy1jO6YKbeec"
+    },
+    {
+      "id": "canon-02-types",
+      "input": "{\"n\":null,\"t\":true,\"f\":false,\"i\":42,\"d\":0.9,\"neg\":-0.5}",
+      "canonical": "{\"d\":0.9,\"f\":false,\"i\":42,\"n\":null,\"neg\":-0.5,\"t\":true}",
+      "hmac_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "hmac_b64url": "SfR8n3e__61wliVclbf0qJc6HuJJ74JiiJQHx_U0s4U"
+    },
+    {
+      "id": "canon-03-japanese-and-escapes",
+      "input": "{\"name\": \"山田　太郎\", \"note\": \"line1\\nline2\\t\\\"quoted\\\"\\\\end\", \"kana\": \"ヤマダ　タロウ\"}",
+      "canonical": "{\"kana\":\"ヤマダ　タロウ\",\"name\":\"山田　太郎\",\"note\":\"line1\\nline2\\t\\\"quoted\\\"\\\\end\"}",
+      "hmac_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "hmac_b64url": "NndUX9XDxKxNGhMrdpNSlOp2eYo_NgXJHyWfB5hizdY"
+    },
+    {
+      "id": "canon-04-integral-floats",
+      "input": "{\"a\":1.0,\"b\":1e3,\"c\":0.72,\"d\":100}",
+      "canonical": "{\"a\":1,\"b\":1000,\"c\":0.72,\"d\":100}",
+      "hmac_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "hmac_b64url": "uX-txNg5CpPE1fI5STTDkFBxcw1e0aGP3sRXcdbeKls"
+    },
+    {
+      "id": "canon-05-nested",
+      "input": "{\"z\":{\"b\":[1,{\"y\":2,\"x\":3}],\"a\":\"v\"},\"m\":[]}",
+      "canonical": "{\"m\":[],\"z\":{\"a\":\"v\",\"b\":[1,{\"x\":3,\"y\":2}]}}",
+      "hmac_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "hmac_b64url": "gJSM2VGHhCUCMiV9kH34t1-AUn_IbQ3Wv1EQqRriy5I"
+    },
+    {
+      "id": "canon-06-envelope",
+      "input": "{\"protocol\": \"slo-handoff/1.0\", \"handoff_id\": \"6f1d2c9a-6b1e-4f52-9d33-2a1b0c4e77aa\", \"issued_at\": \"2026-08-22T09:15:00Z\", \"expires_at\": \"2026-08-22T09:20:00Z\", \"document_type\": \"residency_application\", \"profile\": \"jp.personal.basic/1\", \"source\": {\"kind\": \"ondevice-ocr\", \"app\": \"SecureLocalOCR-Android\", \"version\": \"0.1.0\", \"engine\": \"mlkit-ja-on-device\", \"offline_capture\": true}, \"confirmed\": true, \"fields\": {\"name\": {\"value\": \"山田　太郎\", \"origin\": \"ocr\", \"confidence\": 0.9, \"edited\": false, \"confirmed\": true}, \"phone\": {\"value\": \"09012345678\", \"origin\": \"ocr\", \"confidence\": 0.72, \"edited\": true, \"confirmed\": true}, \"email\": {\"value\": \"taro.yamada@example.co.jp\", \"origin\": \"manual\", \"confidence\": null, \"edited\": true, \"confirmed\": true}}}",
+      "canonical": "{\"confirmed\":true,\"document_type\":\"residency_application\",\"expires_at\":\"2026-08-22T09:20:00Z\",\"fields\":{\"email\":{\"confidence\":null,\"confirmed\":true,\"edited\":true,\"origin\":\"manual\",\"value\":\"taro.yamada@example.co.jp\"},\"name\":{\"confidence\":0.9,\"confirmed\":true,\"edited\":false,\"origin\":\"ocr\",\"value\":\"山田　太郎\"},\"phone\":{\"confidence\":0.72,\"confirmed\":true,\"edited\":true,\"origin\":\"ocr\",\"value\":\"09012345678\"}},\"handoff_id\":\"6f1d2c9a-6b1e-4f52-9d33-2a1b0c4e77aa\",\"issued_at\":\"2026-08-22T09:15:00Z\",\"profile\":\"jp.personal.basic/1\",\"protocol\":\"slo-handoff/1.0\",\"source\":{\"app\":\"SecureLocalOCR-Android\",\"engine\":\"mlkit-ja-on-device\",\"kind\":\"ondevice-ocr\",\"offline_capture\":true,\"version\":\"0.1.0\"}}",
+      "hmac_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "hmac_b64url": "fh0WswhFy87hnlKP0-j1au-2lroAmnTZ5mQRr2d2uqE"
+    }
+  ]
+}

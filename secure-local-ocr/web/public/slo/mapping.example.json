@@ -1,0 +1,16 @@
+{
+  "site": "example-residency",
+  "description": "登録先サイトのフィールドマッピング定義（SPEC.md 8）。サイトごとに1ファイル用意する。",
+  "origins": ["http://127.0.0.1:8787", "https://form.example.co.jp"],
+  "document_type": "residency_application",
+  "map": {
+    "name":         { "selector": "#applicant_name" },
+    "name_kana":    { "selector": "#applicant_kana" },
+    "birthday":     { "selector": "#birth", "format": "YYYY/MM/DD" },
+    "postal_code":  { "selector": ["#zip1", "#zip2"], "split": "-" },
+    "address":      { "selector": "#addr" },
+    "phone":        { "selector": ["#tel1", "#tel2", "#tel3"], "split": "jp-phone" },
+    "email":        { "selector": "#mail" },
+    "move_in_date": { "selector": "#move_in", "format": "YYYY/MM/DD" }
+  }
+}

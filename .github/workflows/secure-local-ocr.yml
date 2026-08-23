@@ -1,0 +1,176 @@
+# Secure Local OCR 専用のCI。
+#
+# リポジトリ内の別企画（請求書仕訳AI）には影響しないよう、
+# secure-local-ocr/ 配下の変更でのみ動く。
+#
+# 実機検証のために、ビルドしたAPKを直接ダウンロードできる形で公開する。
+# リポジトリは非公開なので、Releaseの資産もオーナーだけが取得できる。
+name: Secure Local OCR
+
+on:
+  push:
+    branches:
+      - claude/ondevice-ocr-system-p7n25k
+      - main
+    paths:
+      - 'secure-local-ocr/**'
+      - '.github/workflows/secure-local-ocr.yml'
+  pull_request:
+    paths:
+      - 'secure-local-ocr/**'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '実機検証用にAPKをReleaseとして公開する'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  shared-core-and-web:
+    name: 共有コアとWebの検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Kotlin共有コアのテスト（Android SDK不要）
+        working-directory: secure-local-ocr/android
+        run: ./gradlew :core:test --no-daemon
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: JavaScript共有コアのテスト
+        working-directory: secure-local-ocr/web
+        run: node --test tests/vectors.test.mjs
+
+      # Swift実装だけ未検証で残ると、3実装が同じ規則を守るという前提が崩れる。
+      # 実際、検証していなかった間に正規表現と半角カナ変換が丸ごと働いていなかった（振り返り 課題12）。
+      # Apple の実機ビルドはここでは行えないが、共有ベクタは同じものを流せる。
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
+
+      - name: Swift共有コアのテスト（共通ベクタ）
+        working-directory: secure-local-ocr/ios/SloCore
+        run: swift test
+
+      - name: ブラウザE2E
+        working-directory: secure-local-ocr/web
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+          node --test tests/e2e.spec.mjs
+
+      - name: テスト結果の保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-reports
+          path: secure-local-ocr/android/core/build/reports/tests/
+          if-no-files-found: ignore
+
+  android:
+    name: Androidビルドと通信権限の検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: APKのビルド（offline / web）
+        working-directory: secure-local-ocr/android
+        run: ./gradlew :app:assembleOfflineDebug :app:assembleWebDebug --no-daemon
+
+      # ここが本システムの根拠。ML Kit の依存から INTERNET 権限が混入した実績があるため、
+      # 生成されたAPKそのものを毎回検査する（原則8）。
+      - name: offlineビルドが通信権限を持たないことを検証
+        working-directory: secure-local-ocr/android
+        run: ./gradlew :app:verifyOfflineFlavorHasNoInternet --no-daemon
+
+      - name: 権限の実測結果を記録
+        working-directory: secure-local-ocr
+        run: ./tools/verify_no_network.sh
+
+      - name: APKの保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: secure-local-ocr/android/app/build/outputs/apk/*/debug/*.apk
+          if-no-files-found: error
+
+      # タブレットのブラウザから直接インストールできるよう、Releaseに置く。
+      # 手元にPCが無くても実機検証を始められるようにするため。
+      # 実機検証の段階では、開発ブランチへの push でも配布物を出す。
+      # workflow_dispatch は既定ブランチにワークフローが無いと使えないため、
+      # これが無いとタブレットへAPKを持っていく手段が無くなる。
+      - name: 実機検証用のReleaseを作成
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.publish_release) ||
+          (github.event_name == 'push' && github.ref_name == 'claude/ondevice-ocr-system-p7n25k')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          REPO: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd secure-local-ocr/android/app/build/outputs/apk
+          TAG="slo-android-build${RUN_NUMBER}"
+
+          # ABI分割しているので、配布名を付け直して集める。
+          # arm64-v8a が現行端末のほぼすべて。universal はABIが不明な端末向けの控え。
+          ASSETS=()
+          for FLAVOR in offline web; do
+            for ABI in arm64-v8a universal; do
+              SRC="${FLAVOR}/debug/app-${FLAVOR}-${ABI}-debug.apk"
+              if [ ! -f "$SRC" ]; then
+                echo "期待したAPKがありません: $SRC" >&2
+                ls -R . >&2
+                exit 1
+              fi
+              DEST="SecureLocalOCR-${FLAVOR}-${ABI}-build${RUN_NUMBER}.apk"
+              cp "$SRC" "$DEST"
+              ASSETS+=("$DEST")
+            done
+          done
+
+          {
+            echo "実機検証用のデバッグビルドです。**架空データでのみ使用してください。**"
+            echo
+            echo "まず \`offline-arm64-v8a\` をお試しください。"
+            echo
+            echo "| ファイル | INTERNET権限 | 用途 |"
+            echo "|---|---|---|"
+            echo "| \`offline-arm64-v8a\` | **持たない** | 撮影・OCR・項目抽出・確認まで。現行端末はこちら |"
+            echo "| \`offline-universal\` | **持たない** | 上記が入らない端末向けの控え（サイズ大） |"
+            echo "| \`web-arm64-v8a\` | 持つ（許可リスト限定） | Web入力支援まで確認する場合 |"
+            echo "| \`web-universal\` | 持つ（許可リスト限定） | 同上・控え |"
+            echo
+            echo "インストール手順と確認項目は secure-local-ocr/docs/tablet-check.html を参照してください。"
+            echo
+            echo "- どちらもデバッグ署名です。業務端末への正式配布には使えません。"
+            echo "- offlineビルドに INTERNET 権限が無いことは、このビルドの検証ステップで全APKについて実測済みです。"
+          } > notes.md
+
+          # タグは実際にビルドしたコミットへ向ける。
+          # 指定しないと既定ブランチのコミットにタグが付き、
+          # 「このAPKはどのコードから作られたか」を後から辿れなくなる。
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --target "$GITHUB_SHA" \
+            --title "Secure Local OCR 実機検証ビルド #${RUN_NUMBER}" \
+            --prerelease \
+            --notes-file notes.md \
+            "${ASSETS[@]}"

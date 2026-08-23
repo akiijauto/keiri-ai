@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>入居申込 登録フォーム（登録先サイトの参照実装）</title>
+<link rel="stylesheet" href="../slo/styles.css">
+</head>
+<body>
+<header class="site">
+  <h1>入居申込 登録フォーム</h1>
+  <div class="sub">登録先の業務Webサイト（参照実装）／ SLO Handoff Protocol v1.0 対応</div>
+</header>
+
+<main>
+  <div id="banner" class="banner">
+    取込元（OCRアプリ／入居フォーム）からの引き渡しを待機していません。
+    「取込を開始」を押すとハンドシェイクを行います。
+  </div>
+
+  <section class="card">
+    <h2>取込</h2>
+    <p class="note">
+      このページは値を受け取って入力欄を埋めるだけです。<strong>送信は必ず人間が押します</strong>（INV-4）。
+      受け取ったデータは、失効時刻・正規化の再計算・HMACをすべて検証してから充填します。
+    </p>
+    <button id="btn-ready" type="button">取込を開始</button>
+    <span id="state" class="pill">idle</span>
+  </section>
+
+  <form id="reg-form" class="card" autocomplete="off">
+    <h2>申込内容</h2>
+
+    <div class="field">
+      <label for="applicant_name">氏名</label>
+      <input type="text" id="applicant_name" name="applicant_name" autocomplete="name">
+    </div>
+
+    <div class="field">
+      <label for="applicant_kana">フリガナ</label>
+      <input type="text" id="applicant_kana" name="applicant_kana">
+    </div>
+
+    <div class="field">
+      <label for="birth">生年月日</label>
+      <input type="text" id="birth" name="birth" class="mid" placeholder="1980/01/01">
+      <span class="hint">この欄は YYYY/MM/DD 形式で受け付けます</span>
+    </div>
+
+    <div class="field">
+      <label for="zip1">郵便番号</label>
+      <input type="text" id="zip1" name="zip1" class="short" maxlength="3">
+      -
+      <input type="text" id="zip2" name="zip2" class="short" maxlength="4">
+    </div>
+
+    <div class="field">
+      <label for="addr">住所</label>
+      <input type="text" id="addr" name="addr" autocomplete="street-address">
+    </div>
+
+    <div class="field">
+      <label for="tel1">電話番号</label>
+      <input type="text" id="tel1" name="tel1" class="short" maxlength="4">
+      -
+      <input type="text" id="tel2" name="tel2" class="short" maxlength="4">
+      -
+      <input type="text" id="tel3" name="tel3" class="short" maxlength="4">
+    </div>
+
+    <div class="field">
+      <label for="mail">メールアドレス</label>
+      <input type="text" id="mail" name="mail" autocomplete="email">
+    </div>
+
+    <div class="field">
+      <label for="move_in">入居予定日</label>
+      <input type="text" id="move_in" name="move_in" class="mid" placeholder="2026/04/01">
+    </div>
+
+    <p class="note">
+      青くなっている欄はマッピング定義に従って充填された欄、黄色は自動推定で充填した欄です。
+      推定で埋めた欄は特に念入りに確認してください。
+    </p>
+
+    <button id="btn-submit" type="submit">内容を確認して登録する</button>
+  </form>
+
+  <section class="card">
+    <h2>監査ログ（個人情報を含みません）</h2>
+    <div id="log" class="log"></div>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

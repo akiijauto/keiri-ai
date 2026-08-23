@@ -1,0 +1,577 @@
+{
+  "comment": "OCR行テキストから業務項目を抽出する共通テストベクタ。すべて架空データ。confidence は base(same_line=0.9 / next_line=0.75 / pattern=0.6) x 行信頼度 を小数第2位で四捨五入した値。",
+  "profile": "jp.personal.basic/1",
+  "cases": [
+    {
+      "id": "extract-01-residency",
+      "document_type": "residency_application",
+      "lines": [
+        "入居申込書",
+        "氏名: 山田　太郎",
+        "フリガナ: ヤマダ　タロウ",
+        "生年月日: 昭和55年1月1日",
+        "〒150-0001",
+        "住所: 東京都渋谷区神宮前１－２－３",
+        "　　　グランドメゾン渋谷 401",
+        "電話番号: 090-1234-5678",
+        "メールアドレス: taro.yamada@example.co.jp",
+        "入居予定日: 令和8年4月1日"
+      ],
+      "expected": {
+        "name": {
+          "value": "山田　太郎",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "name_kana": {
+          "value": "ヤマダ　タロウ",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "birthday": {
+          "value": "1980-01-01",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "postal_code": {
+          "value": "150-0001",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "address": {
+          "value": "東京都渋谷区神宮前1-2-3　グランドメゾン渋谷　401",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "phone": {
+          "value": "09012345678",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "email": {
+          "value": "taro.yamada@example.co.jp",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "move_in_date": {
+          "value": "2026-04-01",
+          "confidence": 0.9,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-02-label-on-own-line",
+      "document_type": "contact_registration",
+      "lines": [
+        "お客様番号　CUS-1024",
+        "お名前",
+        "山田　花子",
+        "カナ",
+        "ﾔﾏﾀﾞ ﾊﾅｺ",
+        "TEL 03-1234-5678",
+        "E-mail  hanako@example.com"
+      ],
+      "expected": {
+        "customer_no": {
+          "value": "CUS-1024",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "name": {
+          "value": "山田　花子",
+          "confidence": 0.75,
+          "valid": true
+        },
+        "name_kana": {
+          "value": "ヤマダ　ハナコ",
+          "confidence": 0.75,
+          "valid": true
+        },
+        "phone": {
+          "value": "0312345678",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "email": {
+          "value": "hanako@example.com",
+          "confidence": 0.9,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-03-pattern-only",
+      "document_type": "generic",
+      "lines": [
+        "連絡票",
+        "090-9876-5432",
+        "150-0001",
+        "info@example.jp"
+      ],
+      "expected": {
+        "phone": {
+          "value": "09098765432",
+          "confidence": 0.6,
+          "valid": true
+        },
+        "postal_code": {
+          "value": "150-0001",
+          "confidence": 0.6,
+          "valid": true
+        },
+        "email": {
+          "value": "info@example.jp",
+          "confidence": 0.6,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-04-invalid-value-is-flagged",
+      "document_type": "generic",
+      "lines": [
+        "氏名: 山田　次郎",
+        "生年月日: 1980-02-30"
+      ],
+      "expected": {
+        "name": {
+          "value": "山田　次郎",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "birthday": {
+          "value": "",
+          "raw": "1980-02-30",
+          "confidence": 0.0,
+          "valid": false,
+          "error": "E_VALIDATION"
+        }
+      }
+    },
+    {
+      "id": "extract-05-low-line-confidence",
+      "document_type": "generic",
+      "line_confidence": 0.8,
+      "lines": [
+        "氏名: 山田　三郎",
+        "電話: 090-0000-0001"
+      ],
+      "expected": {
+        "name": {
+          "value": "山田　三郎",
+          "confidence": 0.72,
+          "valid": true
+        },
+        "phone": {
+          "value": "09000000001",
+          "confidence": 0.72,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-06-noise-lines-ignored",
+      "document_type": "generic",
+      "lines": [
+        "※この欄は記入しないでください",
+        "受付番号 -----",
+        "氏名: 山田　四郎",
+        "",
+        "備考: 特になし"
+      ],
+      "expected": {
+        "name": {
+          "value": "山田　四郎",
+          "confidence": 0.9,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-07-table-columns",
+      "comment": "表のラベル列と値列が別ブロックとして返る並び。行の並び順ではラベル同士が隣り合うため、位置で対応づけないと1項目も取れない。",
+      "document_type": "residency_application",
+      "lines": [
+        {
+          "text": "入居申込書",
+          "box": [
+            600,
+            60,
+            1000,
+            120
+          ]
+        },
+        {
+          "text": "お客様番号",
+          "box": [
+            60,
+            200,
+            300,
+            260
+          ]
+        },
+        {
+          "text": "氏名",
+          "box": [
+            60,
+            300,
+            300,
+            360
+          ]
+        },
+        {
+          "text": "フリガナ",
+          "box": [
+            60,
+            400,
+            300,
+            460
+          ]
+        },
+        {
+          "text": "生年月日",
+          "box": [
+            60,
+            500,
+            300,
+            560
+          ]
+        },
+        {
+          "text": "郵便番号",
+          "box": [
+            60,
+            600,
+            300,
+            660
+          ]
+        },
+        {
+          "text": "住所",
+          "box": [
+            60,
+            700,
+            300,
+            760
+          ]
+        },
+        {
+          "text": "電話番号",
+          "box": [
+            60,
+            800,
+            300,
+            860
+          ]
+        },
+        {
+          "text": "メールアドレス",
+          "box": [
+            60,
+            900,
+            300,
+            960
+          ]
+        },
+        {
+          "text": "入居予定日",
+          "box": [
+            60,
+            1000,
+            300,
+            1060
+          ]
+        },
+        {
+          "text": "CUS-1024",
+          "box": [
+            340,
+            200,
+            1500,
+            260
+          ]
+        },
+        {
+          "text": "山田　太郎",
+          "box": [
+            340,
+            300,
+            1500,
+            360
+          ]
+        },
+        {
+          "text": "ヤマダ　タロウ",
+          "box": [
+            340,
+            400,
+            1500,
+            460
+          ]
+        },
+        {
+          "text": "昭和55年1月1日",
+          "box": [
+            340,
+            500,
+            1500,
+            560
+          ]
+        },
+        {
+          "text": "〒150-0001",
+          "box": [
+            340,
+            600,
+            1500,
+            660
+          ]
+        },
+        {
+          "text": "東京都渋谷区神宮前１－２－３ グランドメゾン渋谷 401",
+          "box": [
+            340,
+            700,
+            1500,
+            760
+          ]
+        },
+        {
+          "text": "090-1234-5678",
+          "box": [
+            340,
+            800,
+            1500,
+            860
+          ]
+        },
+        {
+          "text": "taro.yamada@example.co.jp",
+          "box": [
+            340,
+            900,
+            1500,
+            960
+          ]
+        },
+        {
+          "text": "令和8年4月1日",
+          "box": [
+            340,
+            1000,
+            1500,
+            1060
+          ]
+        }
+      ],
+      "expected": {
+        "customer_no": {
+          "value": "CUS-1024",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "name": {
+          "value": "山田　太郎",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "name_kana": {
+          "value": "ヤマダ　タロウ",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "birthday": {
+          "value": "1980-01-01",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "address": {
+          "value": "東京都渋谷区神宮前1-2-3　グランドメゾン渋谷　401",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "phone": {
+          "value": "09012345678",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "email": {
+          "value": "taro.yamada@example.co.jp",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "move_in_date": {
+          "value": "2026-04-01",
+          "confidence": 0.85,
+          "valid": true
+        },
+        "postal_code": {
+          "value": "150-0001",
+          "confidence": 0.9,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-08-wrapped-address-in-cell",
+      "comment": "住所セル内の折り返しは連結し、次の表の行は連結しない。左に何か書かれている行は別項目の行とみなす。",
+      "document_type": "generic",
+      "lines": [
+        {
+          "text": "住所",
+          "box": [
+            60,
+            200,
+            300,
+            260
+          ]
+        },
+        {
+          "text": "東京都渋谷区神宮前１－２－３",
+          "box": [
+            340,
+            200,
+            1200,
+            260
+          ]
+        },
+        {
+          "text": "グランドメゾン渋谷 401",
+          "box": [
+            340,
+            270,
+            1100,
+            330
+          ]
+        },
+        {
+          "text": "勤務先",
+          "box": [
+            60,
+            380,
+            300,
+            440
+          ]
+        },
+        {
+          "text": "株式会社サンプル商事",
+          "box": [
+            340,
+            380,
+            1200,
+            440
+          ]
+        }
+      ],
+      "expected": {
+        "address": {
+          "value": "東京都渋谷区神宮前1-2-3　グランドメゾン渋谷　401",
+          "confidence": 0.85,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-09-label-above-value",
+      "comment": "ラベルの直下に値が置かれる帳票。同じ列で直下を探す。",
+      "document_type": "contact_registration",
+      "lines": [
+        {
+          "text": "氏名",
+          "box": [
+            60,
+            100,
+            200,
+            140
+          ]
+        },
+        {
+          "text": "山田　太郎",
+          "box": [
+            60,
+            150,
+            400,
+            200
+          ]
+        },
+        {
+          "text": "電話番号",
+          "box": [
+            600,
+            100,
+            780,
+            140
+          ]
+        },
+        {
+          "text": "090-1234-5678",
+          "box": [
+            600,
+            150,
+            900,
+            200
+          ]
+        }
+      ],
+      "expected": {
+        "name": {
+          "value": "山田　太郎",
+          "confidence": 0.75,
+          "valid": true
+        },
+        "phone": {
+          "value": "09012345678",
+          "confidence": 0.75,
+          "valid": true
+        }
+      }
+    },
+    {
+      "id": "extract-10-overlapping-line-boxes",
+      "comment": "実際のOCR出力から採った座標。折り返した行の外接矩形は前の行と数ピクセル重なる（417 < 422）。top>=bottom で判定すると折り返しを取りこぼす。",
+      "document_type": "generic",
+      "lines": [
+        {
+          "text": "住所東京都渋谷区神宮前1-2-3",
+          "box": [
+            12,
+            389,
+            398,
+            422
+          ]
+        },
+        {
+          "text": "グランドメゾン渋谷401",
+          "box": [
+            166,
+            417,
+            351,
+            446
+          ]
+        },
+        {
+          "text": "電話番号090-1234-5678",
+          "box": [
+            13,
+            471,
+            282,
+            498
+          ]
+        }
+      ],
+      "expected": {
+        "address": {
+          "value": "東京都渋谷区神宮前1-2-3　グランドメゾン渋谷401",
+          "confidence": 0.9,
+          "valid": true
+        },
+        "phone": {
+          "value": "09012345678",
+          "confidence": 0.9,
+          "valid": true
+        }
+      }
+    }
+  ]
+}

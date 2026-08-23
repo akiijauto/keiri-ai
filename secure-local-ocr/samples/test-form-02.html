@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>連絡先登録票（検証用・架空データ）</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  body {
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "IPAexGothic", sans-serif;
+    color: #000; background: #fff; margin: 0; font-size: 11pt; line-height: 1.7;
+  }
+  h1 { font-size: 15pt; margin: 0 0 3mm; }
+  .caution { border: 1pt solid #000; padding: 2.5mm; margin-bottom: 6mm; font-size: 9pt; }
+  .row { margin-bottom: 4mm; }
+  .label { font-size: 10pt; }
+  .value { font-size: 13pt; border-bottom: 1pt solid #000; padding: 1mm 2mm 1.5mm; display: inline-block; min-width: 90mm; }
+  .tiny { font-size: 8pt; color: #000; }
+  .block { margin-top: 8mm; padding-top: 4mm; border-top: 1pt dashed #000; }
+</style>
+</head>
+<body>
+<h1>連絡先登録票</h1>
+<div class="caution">読み取り検証専用の用紙です。記載されている情報はすべて架空のものです。</div>
+
+<!-- ラベルが値の上の行にある様式。ラベル直後に値が無い場合の抽出を確認する -->
+<div class="row"><div class="label">お客様番号</div><div class="value">CUS-2048</div></div>
+<div class="row"><div class="label">お名前</div><div class="value">山田　花子</div></div>
+<div class="row"><div class="label">カナ</div><div class="value">ヤマダ　ハナコ</div></div>
+<div class="row"><div class="label">TEL</div><div class="value">03-1234-5678</div></div>
+<div class="row"><div class="label">E-mail</div><div class="value">hanako@example.com</div></div>
+<div class="row"><div class="label">生年月日</div><div class="value">平成2年3月4日</div></div>
+
+<div class="block">
+  <div class="tiny">
+    ※以下は小さい文字の読み取り確認用です。8ポイント程度で印字されています。<br>
+    郵便番号 150-0002 ／ 住所 東京都渋谷区渋谷4-5-6 サンプルビル 12F ／ 担当 佐藤<br>
+    受付番号 ----- ／ 整理番号 ----- ／ この欄は記入しないでください
+  </div>
+</div>
+
+</body>
+</html>

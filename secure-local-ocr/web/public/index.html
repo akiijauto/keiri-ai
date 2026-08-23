@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secure Local OCR — Web連携デモ</title>
+<link rel="stylesheet" href="slo/styles.css">
+</head>
+<body>
+<header class="site">
+  <h1>Secure Local OCR — Web連携デモ</h1>
+  <div class="sub">完全オンデバイスOCR入力支援システム ／ SLO Handoff Protocol v1.0</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>この画面について</h2>
+    <p>
+      本システムは、個人情報を含む紙資料を<strong>端末内だけ</strong>でOCRし、
+      人間が確認した項目だけを業務Webサイトへ入力する仕組みです。
+      OCR対象の画像・OCR結果は、クラウドOCRにも生成AIにも送りません。
+    </p>
+    <p class="note">
+      このデモサーバは <code>127.0.0.1</code> にのみバインドされ、
+      CSPで外部への通信をすべて禁止しています。表示されているデータはすべて架空です。
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>2つの取込元、1つの受け口</h2>
+    <p>
+      取込元が Android/iOS の OCR アプリでも、Webの入居フォームでも、
+      登録先へ渡すデータの形式・正規化規則・検証手順は共通です。
+      登録先は受け口を1つ実装するだけで両方に対応できます。
+    </p>
+    <ul class="flow">
+      <li><strong>取込元A：OCRアプリ</strong>（Android / iOS）— 撮影 → 端末内OCR → 項目抽出 → 人間の確認 → 引き渡し</li>
+      <li><strong>取込元B：入居フォーム</strong>（Web）— 直接入力 → 同じ正規化 → 人間の確認 → 引き渡し</li>
+      <li><strong>登録先：業務Webサイト</strong> — 検証 → 入力欄へ充填 → <strong>人間が送信</strong></li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>試す</h2>
+    <p>
+      <a href="intake/">入居フォーム（取込元B）を開く</a><br>
+      <span class="note">入力すると、登録先の画面が開いて自動で充填されます。送信は人間が押します。</span>
+    </p>
+    <p>
+      <a href="registration/">登録先の申込フォームを直接開く</a><br>
+      <span class="note">OCRアプリのWebViewから開かれる想定の画面です。単体で開くと取込元が見つからない状態になります。</span>
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>関連ドキュメント</h2>
+    <ul class="flow">
+      <li><a href="../../要件定義.html">要件定義</a></li>
+      <li><a href="../../README.html">README（環境構築・ビルド・テスト）</a></li>
+      <li><a href="../../振り返り.html">振り返り</a></li>
+      <li><a href="../../docs/architecture.html">アーキテクチャ</a></li>
+      <li><a href="../../docs/security-design.html">セキュリティ設計</a></li>
+      <li><a href="../../docs/threat-model.html">脅威モデル</a></li>
+      <li><a href="../../docs/test-plan.html">テスト計画</a></li>
+    </ul>
+    <p class="note">
+      上記リンクはリポジトリのファイルを直接開いた場合に有効です（デモサーバ経由では配信していません）。
+    </p>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>タブレット実機確認の手順 — Secure Local OCR</title>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>タブレット実機確認の手順</h1>
+  <div class="meta">Secure Local OCR ／ Androidタブレット単体で実施できる範囲 ／ 版 0.1</div>
+  <nav>
+    <a href="../README.html">README</a>
+    <a href="../要件定義.html">要件定義</a>
+    <a href="../振り返り.html">振り返り</a>
+    <a href="test-plan.html">テスト計画</a>
+    <a href="security-design.html">セキュリティ設計</a>
+  </nav>
+</header>
+
+<main>
+
+<section>
+  <h2>この手順でできること</h2>
+  <p>
+    Androidタブレットが1台あれば、<strong>PCも通信監視機材も無しに</strong>
+    MVPの未検証項目の大半を確認できます。
+  </p>
+  <table>
+    <thead><tr><th>確認できること</th><th>必要なもの</th></tr></thead>
+    <tbody>
+      <tr><td>日本語帳票のOCR精度</td><td>タブレットと印刷した検証用紙のみ</td></tr>
+      <tr><td>処理速度（撮影から結果表示まで）</td><td>同上</td></tr>
+      <tr><td>ネットワーク無しで完走できること</td><td>同上（機内モードにする）</td></tr>
+      <tr><td><strong>OCR中に通信していないこと</strong></td><td>同上（下記のとおり権限で確認）</td></tr>
+      <tr><td>誤認識の修正と確認の操作性</td><td>同上</td></tr>
+      <tr><td>画像・データが端末に残らないこと</td><td>同上</td></tr>
+      <tr><td>Webフォームへの充填（Level 3/4）</td><td>別途、同じWi-Fi上のPCが必要（§6）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>1. 準備</h2>
+
+  <h3>1-1. 検証用紙を用意する</h3>
+  <p>
+    <code>secure-local-ocr/samples/</code> にサンプルがあります。
+    <strong>印刷できる場合はPDF、できない場合は画面表示用のPNG</strong>を使ってください。
+  </p>
+  <table>
+    <thead><tr><th>状況</th><th>使うファイル</th><th>やり方</th></tr></thead>
+    <tbody>
+      <tr><td>印刷できる</td><td><code>test-form-01.pdf</code> / <code>test-form-02.pdf</code></td>
+          <td>A4で印刷して撮影。実際の運用に近い条件</td></tr>
+      <tr><td>印刷できない</td><td><code>test-screen-01.png</code>（縦）/ <code>test-screen-02.png</code>（横）</td>
+          <td>スマホやPCの画面に全画面表示し、タブレットで撮影。
+              画面の明るさは最大にし、部屋の照明の映り込みを避ける</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>画面撮影は紙より条件が悪くなります。</strong>
+    バックライトとモアレで輪郭が甘くなるためです。
+    画面で読めれば紙でも読めますが、逆は成り立ちません。
+    画面撮影の結果は「下限の目安」として記録し、印刷できる環境ができたら取り直してください。
+  </div>
+  <table>
+    <thead><tr><th>ファイル</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><code>test-form-01.pdf</code></td><td>入居申込書。必須6項目を含む標準的な様式</td></tr>
+      <tr><td><code>test-form-02.pdf</code></td><td>連絡先登録票。ラベルの次の行に値がある様式と、小さい文字</td></tr>
+      <tr><td><code>test-screen-01.png</code></td><td>入居申込書（画面表示用・縦）。文字を大きくしたもの</td></tr>
+      <tr><td><code>test-screen-02.png</code></td><td>連絡先登録票（画面表示用・横）</td></tr>
+      <tr><td><code>expected-values.html</code></td><td><strong>期待値の一覧（答え合わせ用）</strong>。用紙には載せていません</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    用紙に印字されているのはすべて架空データです。
+    <strong>実在の個人情報を印刷して検証しないでください。</strong>
+  </div>
+
+  <h3>1-2. 端末の前提を満たす</h3>
+  <ul>
+    <li>Android 8.0（API 26）以上</li>
+    <li><strong>画面ロック（PIN・パターン・生体認証）が設定されていること。</strong>
+        未設定の端末では、設計上アプリを開始できません</li>
+    <li>Root化されていないこと（検出されると開始できません）</li>
+  </ul>
+</section>
+
+<section>
+  <h2>2. インストール</h2>
+  <ol>
+    <li>タブレットのブラウザでGitHubにログインする（リポジトリは非公開のため必要）</li>
+    <li>リポジトリの <strong>Releases</strong> を開き、最新の「Secure Local OCR 実機検証ビルド」を選ぶ</li>
+    <li><code>SecureLocalOCR-offline-arm64-v8a-*.apk</code> をタップしてダウンロードする</li>
+    <li>ダウンロード通知をタップしてインストールする。
+        「不明なアプリのインストール」を求められたら、そのブラウザに対して許可する</li>
+  </ol>
+
+  <table>
+    <thead><tr><th>APK</th><th>INTERNET権限</th><th>使いどころ</th></tr></thead>
+    <tbody>
+      <tr><td><code>offline-arm64-v8a</code></td><td><strong>持たない</strong></td>
+          <td>まずこちら。撮影・OCR・抽出・確認まで。引き渡しは表示とコピー</td></tr>
+      <tr><td><code>offline-universal</code></td><td><strong>持たない</strong></td>
+          <td>上記が入らない端末向けの控え。サイズが倍になる</td></tr>
+      <tr><td><code>web-arm64-v8a</code></td><td>持つ（許可リスト限定）</td>
+          <td>Webフォームへの充填まで確認する場合（§6）</td></tr>
+    </tbody>
+  </table>
+
+  <p class="note">
+    APKはCPUの種類（ABI）ごとに分けて配布しています。同梱している日本語OCRモデルと
+    ネイティブライブラリが全ABI分入ると50MBを超え、配布経路によっては扱えないためです。
+    現行のタブレットはほぼ <code>arm64-v8a</code> です。
+    「アプリがインストールされていません」と出る場合は <code>universal</code> を試してください。
+  </p>
+
+  <p class="note">
+    どちらもデバッグ署名のビルドです。動作確認専用で、業務端末への正式配布には使えません。
+    両方を入れても、パッケージ名が違うので共存します。
+  </p>
+</section>
+
+<section>
+  <h2>3. まず確認してほしいこと：通信権限が無いこと</h2>
+  <p>
+    このシステムの根拠にあたる部分なので、最初に確認してください。
+    <strong>アプリを起動して認証する前に</strong>確認できます。
+  </p>
+
+  <h3>方法A：アプリの画面で見る</h3>
+  <ol>
+    <li>アプリを起動する（認証はまだしない）</li>
+    <li>「ビルド情報と検証設定」をタップする</li>
+    <li>先頭に <strong>「このビルドは通信権限を持っていません」</strong> と表示されることを確認する</li>
+  </ol>
+
+  <h3>方法B：Androidの設定で見る（アプリの自己申告に頼らない確認）</h3>
+  <ol>
+    <li>端末の「設定」→「アプリ」→「Secure Local OCR」を開く</li>
+    <li>権限の一覧に <strong>カメラだけ</strong>が並び、通信に関する項目が無いことを確認する</li>
+  </ol>
+
+  <div class="callout ok">
+    offlineビルドは INTERNET 権限を宣言していません。
+    Androidはこの権限が無いアプリにソケットを開かせないため、
+    <strong>OCR中に外部へ送信することが、実装の善し悪しと無関係に起こり得ません。</strong>
+    通信監視の機材が無くても、この一点は端末上で確認できます。
+  </div>
+</section>
+
+<section>
+  <h2>4. 機能の確認（20〜30分）</h2>
+
+  <h3>4-1. 機内モードで完走できるか（最重要）</h3>
+  <ol>
+    <li>タブレットを<strong>機内モード</strong>にする</li>
+    <li>アプリを起動して認証する</li>
+    <li>検証用紙 <code>test-form-01</code> を枠内に収めて「撮影してOCR」</li>
+    <li>確認画面まで到達することを確認する</li>
+  </ol>
+  <p><strong>合格条件：</strong>機内モードのまま、撮影から確認画面まで完了できること。</p>
+
+  <h3>4-2. 読み取り精度</h3>
+  <p>
+    確認画面の各項目を <code>samples/expected-values.html</code> と突き合わせて、
+    ○（そのまま使える）／△（軽微な修正）／×（読めない・誤り）を記録してください。
+  </p>
+  <table>
+    <thead><tr><th>#</th><th>条件</th><th>やること</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>明るい場所・正対</td><td>基準となる精度を見る</td></tr>
+      <tr><td>2</td><td>15度ほど傾ける</td><td>必須項目が取れるか</td></tr>
+      <tr><td>3</td><td>30度ほど傾ける</td><td>ここは「要確認」扱いでも可</td></tr>
+      <tr><td>4</td><td>薄暗い場所</td><td>誤った値を確定させないか</td></tr>
+      <tr><td>5</td><td>光の反射がある状態</td><td>同上</td></tr>
+      <tr><td>6</td><td><code>test-form-02</code>（次行に値・小さい文字）</td><td>ラベル次行の抽出と、小さい文字の扱い</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    見てほしいのは「読めたかどうか」だけではありません。
+    <strong>読めなかったときに、もっともらしい誤った値を確定できてしまわないか</strong>が重要です。
+    読めない場合は「要修正」と表示されるのが正しい挙動です。
+  </div>
+
+  <h3>4-3. 速度</h3>
+  <p>
+    撮影ボタンを押してから確認画面が出るまでを数回計測してください。
+    確認画面の上部に「認識 ○行 / ○○ms」と出ます。この数値を記録してください。
+    目標は3秒以内ですが、初回はモデルの読み込みで遅くなることがあります。
+  </p>
+
+  <h3>4-4. 修正と確認の操作</h3>
+  <ol>
+    <li>誤認識された項目を手で直す → その場で再検証され、エラー表示が消えることを確認</li>
+    <li>各項目の「この内容で確認しました」にチェックを付ける</li>
+    <li>必須項目が揃うまで「Web入力へ進む」が押せないことを確認</li>
+  </ol>
+</section>
+
+<section>
+  <h2>5. セキュリティの確認（10分）</h2>
+  <table>
+    <thead><tr><th>#</th><th>確認すること</th><th>手順</th><th>合格条件</th></tr></thead>
+    <tbody>
+      <tr><td>S-1</td><td>画像が保存されない</td><td>撮影後、ギャラリー／フォトを開く</td><td>撮影した書類が存在しない</td></tr>
+      <tr><td>S-2</td><td>スクリーンショット抑止</td><td>確認画面でスクリーンショットを試す</td>
+          <td>撮影できない（許可設定を入れていない場合）</td></tr>
+      <tr><td>S-3</td><td>タスク切替時の秘匿</td><td>アプリ切替画面を開く</td><td>画面の内容が見えない</td></tr>
+      <tr><td>S-4</td><td>再認証</td><td>確認画面のまま3分以上放置して戻る</td><td>値が破棄され、認証からやり直しになる</td></tr>
+      <tr><td>S-5</td><td>終了後に残らない</td><td>「終了して破棄」→アプリを終了→再起動</td><td>前回の値が復元されない</td></tr>
+      <tr><td>S-6</td><td>監査ログに値が無い</td><td>「ビルド情報と検証設定」の監査ログ欄を見る</td>
+          <td>イベント名と件数だけで、氏名・番号が無い</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>S-2 が「撮影できない」ため、結果を画面で記録できません。</strong>
+    記録が必要な場合は「ビルド情報と検証設定」で
+    <strong>「スクリーンショットを許可」</strong>を一時的にオンにしてください
+    （デバッグビルドのみ・架空データでの検証時に限る）。
+    切り替えるとアプリが作り直されます。確認が終わったらオフに戻してください。
+  </div>
+</section>
+
+<section>
+  <h2>6. Webフォームへの充填を確認する場合（PCが必要）</h2>
+  <p>
+    ここだけはタブレット単体では確認できません。登録先のWebサイトが必要なためです。
+    同じWi-Fiに繋がるPCがあれば、参照実装を動かして確認できます。
+  </p>
+  <ol>
+    <li>PCでリポジトリを取得し、参照実装を起動する
+<pre><code>cd secure-local-ocr/web
+node server.mjs</code></pre>
+      <p class="note">
+        既定では <code>127.0.0.1</code> にのみバインドしているため、そのままではタブレットから繋がりません。
+        検証時に限り、PCのLAN内アドレスで待ち受けるようにしてください（起動時の引数で変更できます）。
+      </p>
+    </li>
+    <li>PCのIPアドレスを調べる（例: <code>192.168.1.10</code>）</li>
+    <li>タブレットに <code>SecureLocalOCR-web-*.apk</code> を入れる</li>
+    <li>アプリの「ビルド情報と検証設定」で登録先URLを
+        <code>http://192.168.1.10:8787/registration/</code> に変更して保存する</li>
+    <li>撮影 → 確認 → 「Web入力へ進む」→「この内容を入力する」</li>
+  </ol>
+  <p><strong>合格条件：</strong>入力欄が埋まること。そして<strong>自動送信されないこと</strong>。</p>
+  <p class="note">
+    登録先URLを端末上で変更できるのはデバッグビルドだけです。
+    リリースビルドでは組み込みの許可リスト以外のオリジンへ値を渡しません。
+  </p>
+</section>
+
+<section>
+  <h2>7. 結果の記録</h2>
+  <p>次の形式で記録してください。そのまま <code>振り返り.html</code> へ反映します。</p>
+<pre><code>試験日   : 2026-__-__
+端末     : （機種 / Androidバージョン）
+ビルド   : SecureLocalOCR-offline-build__
+
+3. 通信権限が無いこと      : 確認できた / できない
+4-1. 機内モードで完走      : 合格 / 不合格
+4-2. 精度（form-01 明所）  : 氏名○ フリガナ○ 生年月日○ 郵便番号○ 住所△ 電話○
+4-2. 精度（form-01 15度）  : 
+4-2. 精度（form-01 暗所）  : 
+4-2. 精度（form-02）       : 
+4-3. 速度                  : 1回目 ____ms / 2回目 ____ms / 3回目 ____ms
+4-4. 修正操作              : 問題なし / 問題あり（内容）
+5. セキュリティ S-1〜S-6   : 
+気づいたこと               : </code></pre>
+  <p>
+    ×（誤った値が確定できてしまう）があった場合は、
+    <strong>用紙のどの記載が、どう読み取られたか</strong>を教えてください。抽出規則を直します。
+  </p>
+</section>
+
+<section>
+  <h2>8. うまくいかないとき</h2>
+  <table>
+    <thead><tr><th>症状</th><th>原因と対処</th></tr></thead>
+    <tbody>
+      <tr><td>「認証して開始」が押せない</td>
+          <td>端末に画面ロックが未設定。設定してから再起動する</td></tr>
+      <tr><td>「この端末は業務利用できません」と出る</td>
+          <td>Root化またはカスタムビルドと判定された。別の端末で試す</td></tr>
+      <tr><td>インストールできない</td>
+          <td>ブラウザに「不明なアプリのインストール」を許可する。
+              古い版が入っている場合は先にアンインストールする</td></tr>
+      <tr><td>カメラが真っ暗</td>
+          <td>カメラ権限を許可する。他のアプリがカメラを掴んでいたら閉じる</td></tr>
+      <tr><td>文字が認識されない</td>
+          <td>枠内に収める。明るさと角度を変える。用紙を平らにする</td></tr>
+      <tr><td>初回だけ極端に遅い</td>
+          <td>モデルの読み込み。2回目以降の値で判断する</td></tr>
+      <tr><td>「Web入力へ進む」が押せない</td>
+          <td>必須項目の確認チェックが揃っていない。警告に出ている項目を埋める</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+<footer class="doc">
+  Secure Local OCR タブレット実機確認手順 版0.1 ／ 検証にはすべて架空データを使用してください。
+</footer>
+</body>
+</html>
