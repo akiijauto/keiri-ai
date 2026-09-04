@@ -24,6 +24,7 @@ import freee_csv
 import image_prep
 import pdf_reader
 import prompts
+import usage_guard
 from llm_client import LLMRateLimitError, get_client
 
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "20"))
@@ -43,6 +44,12 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "provider": os.environ.get("LLM_PROVIDER", "gemini")}
+
+
+@app.get("/usage")
+def usage() -> dict:
+    """その日のAI呼び出しの消費状況。監視・確認用。"""
+    return usage_guard.status()
 
 
 @app.get("/accounts")
@@ -85,6 +92,18 @@ async def analyze(file: UploadFile = File(...)) -> dict:
     body = await file.read()
     if len(body) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"ファイルサイズは{MAX_UPLOAD_MB}MBまでです")
+
+    # AIを呼ぶ前に、その日の総量を1回ぶん使う。
+    # nginx のIP単位のレート制限は「1つのIPが速く叩くこと」しか止められないため、
+    # 総量はここで数える（2026-09-05、Basic認証を外して公開したことに伴う対策）。
+    try:
+        usage_guard.consume()
+    except usage_guard.DailyLimitExceeded as exc:
+        raise HTTPException(
+            429,
+            f"本日の解析回数の上限({exc.limit}回)に達しました。"
+            f"{exc.resets_at} に再開します。",
+        ) from exc
 
     tmp_path: Path | None = None
     try:
