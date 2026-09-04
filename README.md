@@ -274,7 +274,7 @@ cp .env.example .env
 ### 6. Basic認証の設定（Nginx）
 
 ```bash
-sudo htpasswd -c /etc/nginx/.htpasswd-keiri-ai eigyo
+sudo htpasswd -c /etc/nginx/.htpasswd-keiri-ai <ユーザー名>
 # パスワードの入力を求められます
 ```
 
