@@ -6,7 +6,7 @@
 
 > **設計思想**: AIは案を出すだけ。確定は必ず人間が行います（内部統制への配慮）。
 
-- 公開デモ: <https://keiri.ai-l-a-b-o.com/>（Basic認証で保護しています）
+- 公開デモ: <https://keiri.ai-l-a-b-o.com/>（**認証なしで公開しています**。濫用防止はBasic認証ではなく、Nginxのレート制限とアプリ側の1日あたりAI呼び出し上限で行っています）
 - 勘定科目18科目・税区分5種（freee準拠）／インボイス登録番号の有無で税区分を切り替え
 - 確信度70%未満の仕訳には「要確認」バッジ。**なぜその科目・その税区分なのか**を必ず表示
 - FastAPI + Next.js + Gemini。モデル名は環境変数化してあり、差し替えは `.env` の1行
@@ -101,7 +101,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    USER["ブラウザ / スマホ"] -->|HTTPS| NGINX["Nginx<br/>Basic認証 + Let's Encrypt"]
+    USER["ブラウザ / スマホ"] -->|HTTPS| NGINX["Nginx<br/>レート制限 + Let's Encrypt"]
     NGINX -->|"/"| WEB["Next.js standalone<br/>127.0.0.1:3100"]
     NGINX -->|"/api/"| API["FastAPI (uvicorn)<br/>127.0.0.1:8101"]
     WEB -.->|rewrites| API
@@ -109,7 +109,7 @@ flowchart LR
     API --> POP["poppler + pdfplumber<br/>PDF読取"]
 ```
 
-バックエンドは**ループバックアドレスにのみバインド**します。全インターフェースで待ち受けるとNginxのBasic認証を迂回できてしまうため、起動後に `ss -tlnp` で必ず確認します（この事故を実際に起こしています。[振り返り.md](振り返り.md) 参照）。
+バックエンドは**ループバックアドレスにのみバインド**します。全インターフェースで待ち受けるとNginxを経由せずに直接叩けてしまい、**レート制限を迂回できる**ため、起動後に `ss -tlnp` で必ず確認します（この事故を実際に起こしています。[振り返り.md](振り返り.md) 参照）。
 
 ### モジュールの責務
 
@@ -226,7 +226,7 @@ sudo apt update
 sudo apt install -y poppler-utils nginx apache2-utils
 ```
 
-> `apache2-utils` はBasic認証のパスワードファイル作成（htpasswd）に使用します。
+> `apache2-utils` は **Basic認証を使う場合のみ**必要です（htpasswd）。公開デモでは使っていません。
 
 ### 3. バックエンド（FastAPI）
 
@@ -275,12 +275,33 @@ cp .env.example .env
 
 > **重要**: `.env` は絶対にコミットしないでください（`.gitignore` に登録済み）。
 
-### 6. Basic認証の設定（Nginx）
+### 6. Nginxの設定と、濫用防止（レート制限）
 
-```bash
-sudo htpasswd -c /etc/nginx/.htpasswd-keiri-ai <ユーザー名>
-# パスワードの入力を求められます
+**公開デモはBasic認証を掛けていません。** 誰でも触れないとポートフォリオとして意味がないためです。
+代わりに、**費用が青天井にならないための制限を2段で入れています。**
+
+| 段 | どこ | 何を止めるか |
+| --- | --- | --- |
+| ① Nginx（IP単位） | `/etc/nginx/conf.d/keiri-ratelimit.conf` | 1つのIPが**速く叩く**こと |
+| ② アプリ（総量） | `api/usage_guard.py` | **IPを変えて回り込む**こと。その日に何回AIを呼んだかを数える |
+
+**①だけでは足りません。** IPを変えれば回り込めるので、「その日の総量」はアプリ側で数えます。
+数え方は3点 — **AIを呼ぶ前に数える**（後だと失敗回が漏れる）／**数えられなければ止める**（課金が絡む以上、
+疑わしいときは拒否側へ倒す）／**集計は日本時間**（UTCだと日本の朝9時に日付が変わる）。
+残量は `GET /api/usage` で確認でき、上限は `DAILY_ANALYZE_LIMIT`（既定50回）で変えられます。
+
+レート制限のゾーン定義（**このファイルはVPS側にあり、リポジトリには含めていません**）:
+
+```nginx
+# /etc/nginx/conf.d/keiri-ratelimit.conf
+limit_req_zone  $binary_remote_addr zone=keiri_analyze:10m rate=5r/m;
+limit_req_zone  $binary_remote_addr zone=keiri_api:10m     rate=60r/m;
+limit_conn_zone $binary_remote_addr zone=keiri_conn:10m;
 ```
+
+> **順序を守ること。** 認証を外してからレート制限を入れると、**無防備な時間ができます。**
+> 実際の作業では、認証が有効なうちに10連射して `401 → 429` に切り替わることを確かめてから外しました
+> （`limit_req` は PREACCESS フェーズで評価されるため、認証より先に効きます）。
 
 Nginx設定例（`/etc/nginx/sites-available/keiri-ai`）:
 
@@ -289,8 +310,11 @@ server {
     listen 80;
     server_name <ドメイン名>;
 
-    auth_basic "Restricted";
-    auth_basic_user_file /etc/nginx/.htpasswd-keiri-ai;
+    # 非公開で運用したい場合はこの2行を戻す（.htpasswd は残置してある）
+    # auth_basic "Restricted";
+    # auth_basic_user_file /etc/nginx/.htpasswd-keiri-ai;
+
+    limit_conn keiri_conn 8;
 
     location / {
         proxy_pass http://127.0.0.1:3100;
@@ -298,7 +322,15 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
     }
 
+    location /api/analyze {
+        limit_req  zone=keiri_analyze burst=2 nodelay;
+        limit_conn keiri_conn 2;
+        proxy_pass http://127.0.0.1:8101/analyze;
+        proxy_set_header Host $host;
+    }
+
     location /api/ {
+        limit_req zone=keiri_api burst=20 nodelay;
         proxy_pass http://127.0.0.1:8101/;
         proxy_set_header Host $host;
     }
@@ -315,13 +347,17 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+> **注意**: リポジトリ同梱の `scripts/nginx-keiri-ai.conf` と `scripts/setup_vps.sh` は、
+> 新規デプロイの初期状態として **Basic認証が有効なまま**です（不特定多数に晒さない側を既定にしています）。
+> 公開デモの本番設定だけが、上のレート制限に置き換わっています。
+>
 > `scripts/nginx-keiri-ai.conf` は **certbot 実行前のHTTP版（ブートストラップ用）** です。
 > 証明書ファイルは certbot 実行後にしか存在しないため、SSL入りの設定を先に書くと
 > 初回デプロイ時に `nginx -t` が失敗します。SSL化は次項で certbot に任せます。
 
 ### 6.5 HTTPS化（Let's Encrypt）
 
-Basic認証のパスワードはHTTPでは平文で流れるため、**公開前に必ずHTTPS化**します。
+請求書の内容と生成された仕訳が経路上で読まれないよう、**公開前に必ずHTTPS化**します。
 
 前提: DNSがVPSのIPに向いており、HTTPでアクセスできること。
 
@@ -341,7 +377,7 @@ sudo systemctl status certbot.timer                          # enabled / active 
 sudo certbot renew --dry-run --cert-name keiri.ai-l-a-b-o.com
 ```
 
-動作確認（Basic認証が効いていれば401が返る）:
+動作確認（認証を掛けていないので200が返る）:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://keiri.ai-l-a-b-o.com
@@ -368,7 +404,7 @@ PORT=3100 HOSTNAME=127.0.0.1 node .next/standalone/server.js
 ```bash
 ss -tlnp | grep -E '3100|8101'
 # 期待: 127.0.0.1:3100 / 127.0.0.1:8101
-# 0.0.0.0 や * になっていたら nginx の Basic認証を迂回できる状態です
+# 0.0.0.0 や * になっていたら nginx を迂回して直接叩ける（＝レート制限が効かない）状態です
 ```
 
 常駐化はsystemdで行います（`scripts/keiri-ai-*.service` を参照）。
@@ -385,7 +421,7 @@ curl -s http://127.0.0.1:8101/accounts   # 勘定科目18件・税区分5種
 
 ## 使い方
 
-1. ブラウザでアクセスし、Basic認証でログイン
+1. ブラウザで <https://keiri.ai-l-a-b-o.com/> を開く
 2. 請求書を読み込む（**「PDFを選ぶ」または「カメラで撮影」**）
 3. AIが読み取った内容と仕訳案、推定根拠を確認
 4. 必要に応じて修正し、承認
@@ -412,7 +448,7 @@ curl -s http://127.0.0.1:8101/accounts   # 勘定科目18件・税区分5種
 
 PDFが手元に無い場合（受け取った紙の請求書、外出先など）はカメラから直接読み込めます。
 
-1. スマホのブラウザで `https://keiri.ai-l-a-b-o.com` を開き、Basic認証でログイン
+1. スマホのブラウザで `https://keiri.ai-l-a-b-o.com` を開く
 2. **「カメラで撮影」**をタップ（背面カメラが起動します）
 3. 請求書を撮影 → プレビューでファイル名と画像を確認
 4. ぼやけ・見切れがあればもう一度タップして撮り直す
@@ -492,7 +528,7 @@ python3 test_core.py
 | **画像は長辺2000px・JPEG品質85に統一** | 2000pxあればA4を200dpi相当で撮った文字は判読できる。最近のスマホは12MP超あり、そのまま送るのは通信量とAPIコストの無駄。出力をJPEGに統一しているのは、送信量が小さくAI側の対応も確実なため |
 | **HEICを「開けない」ではなく「対処方法つきで弾く」** | Pillowの例外メッセージは利用者に意味が分からない。ファイル先頭の ftyp ブランドで先に判別し、「設定を互換性優先に変える」「PDFに変換する」という具体的な手順を返す |
 | **nginx設定はリポジトリ＝HTTP版、本番＝certbot管理のHTTPS版で意図的に食い違わせている** | SSL入りの設定をリポジトリに置くと、証明書が存在しない初回デプロイで `nginx -t` が失敗して起動できない。「HTTPで立ち上げる→certbotで証明書を取る」という順序を踏む必要がある。**乖離そのものより、乖離の理由が書かれていないことが問題**なので、設定ファイル冒頭とこのREADMEの両方に理由を書いている |
-| **フロントエンドを `HOSTNAME=127.0.0.1` で起動する** | Next.js standalone の `server.js` は `HOSTNAME` 未指定だと `0.0.0.0` で待ち受ける。リバースプロキシでBasic認証をかける構成でこれをやると、**認証を迂回して直接アクセスできる状態になる。** systemdユニットにコメント付きで明記している |
+| **フロントエンドを `HOSTNAME=127.0.0.1` で起動する** | Next.js standalone の `server.js` は `HOSTNAME` 未指定だと `0.0.0.0` で待ち受ける。リバースプロキシでBasic認証をかける構成でこれをやると、**認証を迂回して直接アクセスできる状態になる。** 認証を外してレート制限に切り替えた現在も同じで、**Nginxを迂回されると制限そのものが効かない。** systemdユニットにコメント付きで明記している |
 | **勘定科目マスタをコード内の1ファイルにした** | 実運用のfreeeでは事業所ごとに科目がカスタマイズされる。DBに置くよりも、案件ごとに差し替える単位が明確になる。プロンプトへの埋め込みも検証も同じマスタを参照するため、二重管理が起きない |
 
 ---
