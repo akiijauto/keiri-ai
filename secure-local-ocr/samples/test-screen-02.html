@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>連絡先登録票（画面表示用・横・架空データ）</title>
+<style>
+  /* PCモニタなど横長の画面に表示して撮影する用。ラベルが値の上の行にある様式。 */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; }
+  body {
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "IPAexGothic", sans-serif;
+    background: #fff; color: #000;
+    padding: 44px 60px;
+    -webkit-font-smoothing: none;
+  }
+  h1 { font-size: 46px; margin-bottom: 8px; letter-spacing: .08em; }
+  .note { font-size: 20px; border: 3px solid #000; padding: 10px 14px; margin-bottom: 26px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 56px; }
+  .label { font-size: 24px; margin-bottom: 2px; }
+  .value {
+    font-size: 44px; font-weight: 700;
+    border-bottom: 4px solid #000; padding-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+  <h1>連絡先登録票</h1>
+  <div class="note">読み取り検証用・記載内容はすべて架空です</div>
+  <div class="grid">
+    <div><div class="label">お客様番号</div><div class="value">CUS-2048</div></div>
+    <div><div class="label">お名前</div><div class="value">山田　花子</div></div>
+    <div><div class="label">カナ</div><div class="value">ヤマダ　ハナコ</div></div>
+    <div><div class="label">生年月日</div><div class="value">平成2年3月4日</div></div>
+    <div><div class="label">TEL</div><div class="value">03-1234-5678</div></div>
+    <div><div class="label">E-mail</div><div class="value">hanako@example.com</div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>入居フォーム（Web入力の取込元）</title>
+<link rel="stylesheet" href="../slo/styles.css">
+</head>
+<body>
+<header class="site">
+  <h1>入居フォーム</h1>
+  <div class="sub">Web入力の取込元 ／ OCRアプリと同じ SLO Handoff Protocol v1.0 で登録先へ引き渡します</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>この画面の位置づけ</h2>
+    <p class="note">
+      撮影・OCRを使わず、入居者ご本人や担当者がWebで直接入力する経路です。
+      入力値は<strong>OCRアプリとまったく同じ正規化・検証規則</strong>（Profile <code>jp.personal.basic/1</code>）にかけられ、
+      同じEnvelope形式で登録先へ渡されます。登録先は取込元がOCRかWeb入力かを意識しません（SPEC.md 9）。
+    </p>
+    <p class="note">入力内容はこの端末のブラウザ内だけで処理されます。外部への送信は行いません。</p>
+  </section>
+
+  <section class="card">
+    <h2>入力</h2>
+    <div id="fields"></div>
+    <button id="btn-handoff" type="button">確認して登録先へ引き渡す</button>
+    <button id="btn-clear" type="button" class="secondary">入力を破棄</button>
+    <div id="msg" class="banner mt">未入力です。</div>
+  </section>
+
+  <section class="card">
+    <h2>正規化結果（登録先へ渡る値）</h2>
+    <table class="status"><tbody id="preview"></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>監査ログ（個人情報を含みません）</h2>
+    <div id="log" class="log"></div>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

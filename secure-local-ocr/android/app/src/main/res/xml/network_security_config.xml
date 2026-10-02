@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  通信先の許可リスト（企画書 7）。
+
+  方針:
+   - 平文通信は全面禁止（cleartextTrafficPermitted="false"）
+   - 業務Webサイトのドメインだけを明示する
+   - ここに書かれていない宛先は、たとえコードが呼んでも接続できない
+
+  実運用では、対象サイトが実際に使う認証・CDN・CAPTCHA のドメインを
+  Phase 4 で調査したうえで確定する。下記はデモ用の値。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- 業務Webサイト（許可） -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">form.example.co.jp</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+
+    <!-- 社内検証用のループバック（開発ビルドのみ想定） -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

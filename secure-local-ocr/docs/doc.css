@@ -1,0 +1,170 @@
+:root {
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --ink: #1b2430;
+  --muted: #5d6b7a;
+  --line: #dbe2ea;
+  --accent: #1a5fb4;
+  --ok: #1a7f45;
+  --warn: #9a6700;
+  --danger: #b3261e;
+  --code-bg: #10161d;
+  --code-ink: #d7e2ee;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  line-height: 1.85;
+  font-size: 15px;
+}
+
+header.doc {
+  background: linear-gradient(180deg, #17436f, #1a5fb4);
+  color: #fff;
+  padding: 28px 24px 22px;
+}
+header.doc h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: .02em; }
+header.doc .meta { font-size: 13px; opacity: .9; }
+header.doc nav { margin-top: 12px; font-size: 13px; }
+header.doc nav a { color: #cfe2ff; margin-right: 14px; text-decoration: none; }
+header.doc nav a:hover { text-decoration: underline; }
+
+main { max-width: 940px; margin: 0 auto; padding: 24px; }
+
+section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+h2 {
+  font-size: 18px;
+  margin: 0 0 14px;
+  padding-left: 11px;
+  border-left: 4px solid var(--accent);
+}
+
+h3 { font-size: 15px; margin: 22px 0 8px; color: #24405e; }
+h4 { font-size: 14px; margin: 16px 0 6px; color: var(--muted); }
+
+p { margin: 0 0 12px; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13.5px;
+  margin: 10px 0 16px;
+  display: block;
+  overflow-x: auto;
+}
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: #eef2f7; font-weight: 600; white-space: nowrap; }
+tbody tr:nth-child(even) { background: #fbfcfd; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  background: #eef2f7;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+pre {
+  background: var(--code-bg);
+  color: var(--code-ink);
+  padding: 14px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+pre.diagram {
+  background: #fbfcfd;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  line-height: 1.5;
+}
+
+ul, ol { margin: 0 0 14px; padding-left: 1.5em; }
+li { margin-bottom: 5px; }
+
+blockquote {
+  margin: 12px 0;
+  padding: 10px 16px;
+  border-left: 4px solid var(--accent);
+  background: #f2f6fb;
+  color: #24405e;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.badge.ok { color: var(--ok); border-color: var(--ok); background: #eef7f1; }
+.badge.warn { color: var(--warn); border-color: var(--warn); background: #fdf6e6; }
+.badge.ng { color: var(--danger); border-color: var(--danger); background: #fdeeed; }
+.badge.todo { color: #4a5768; border-color: #b9c4d1; background: #f1f4f8; }
+
+.callout {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--warn);
+  background: #fffbf2;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 14px 0;
+}
+.callout.danger { border-left-color: var(--danger); background: #fdf3f2; }
+.callout.ok { border-left-color: var(--ok); background: #f1f8f4; }
+
+.principle {
+  font-weight: 600;
+  color: #17436f;
+}
+
+footer.doc {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 0 24px 40px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+a { color: var(--accent); }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12171d;
+    --panel: #1a2028;
+    --ink: #e4e9ef;
+    --muted: #9aa7b5;
+    --line: #2d3742;
+  }
+  th { background: #232c36; }
+  tbody tr:nth-child(even) { background: #1d242c; }
+  code { background: #232c36; }
+  blockquote { background: #1e2932; color: #cfe2ff; }
+  pre.diagram { background: #161d24; color: var(--ink); }
+  .callout { background: #241f14; }
+  .callout.danger { background: #2a1a19; }
+  .callout.ok { background: #16241c; }
+  .badge { background: #1a2028; }
+  .badge.ok { background: #16241c; }
+  .badge.warn { background: #241f14; }
+  .badge.ng { background: #2a1a19; }
+  .badge.todo { background: #232c36; }
+}

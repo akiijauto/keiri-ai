@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>README — Secure Local OCR</title>
+<link rel="stylesheet" href="docs/doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>Secure Local OCR</h1>
+  <div class="meta">完全オンデバイスOCR入力支援システム ／ 開発環境構築・ビルド・テスト・運用手順</div>
+  <nav>
+    <a href="要件定義.html">要件定義</a>
+    <a href="振り返り.html">振り返り</a>
+    <a href="docs/architecture.html">アーキテクチャ</a>
+    <a href="docs/security-design.html">セキュリティ設計</a>
+    <a href="docs/threat-model.html">脅威モデル</a>
+    <a href="docs/test-plan.html">テスト計画</a>
+    <a href="docs/tablet-check.html">タブレット実機確認</a>
+  </nav>
+</header>
+
+<main>
+
+<section>
+  <h2>これは何か</h2>
+  <p>
+    個人情報を含む紙資料を、スマートフォン／タブレットの<strong>端末内だけ</strong>でOCRし、
+    人間が確認した項目だけを業務Webサイトへ入力する仕組みです。
+    OCR対象の画像もOCR結果も、クラウドOCRにも生成AIにも送りません。
+  </p>
+
+  <div class="callout ok">
+    <strong>本リポジトリには別企画（請求書仕訳AI）も含まれています。</strong>
+    本システムは <code>secure-local-ocr/</code> 配下で完結しており、
+    リポジトリ直下の <code>api/</code> <code>app/</code> <code>要件定義.md</code> などとは
+    コードもデータも設定も共有しません。混同しないでください。
+  </div>
+</section>
+
+<section>
+  <h2>ディレクトリ構成</h2>
+<pre class="diagram">secure-local-ocr/
+├── README.html            この文書
+├── 要件定義.html
+├── 振り返り.html
+├── docs/                  設計文書（アーキテクチャ／セキュリティ／脅威モデル／テスト計画）
+├── protocol/              受け渡しプロトコル
+│   ├── SPEC.md                仕様書
+│   ├── slo-handoff-v1.schema.json
+│   └── testdata/              3実装が共有するテストベクタ（すべて架空データ）
+├── android/
+│   ├── core/              Kotlin/JVM 共有コア（Android SDK 非依存・単体テストあり）
+│   └── app/               Androidアプリ（offline / web の2フレーバー）
+├── ios/
+│   ├── SloCore/           Swift 共有コア（Swift Package）
+│   └── SecureLocalOcr/    SwiftUIアプリ
+├── web/
+│   ├── public/slo/        共有コア(JS)・ブリッジ・監査ログ・マッピング定義
+│   ├── public/registration/  登録先の業務Webサイト（参照実装）
+│   ├── public/intake/     入居フォーム（Web入力の取込元）
+│   ├── server.mjs         127.0.0.1 限定の開発サーバ
+│   └── tests/             ベクタテスト・ブラウザE2E
+└── tools/
+    ├── verify_no_network.sh   APKの通信権限を実測
+    ├── analyze_pcap.py        通信監視の結果を判定
+    └── gen_canonical_vectors.py</pre>
+</section>
+
+<section>
+  <h2>開発環境</h2>
+  <table>
+    <thead><tr><th>対象</th><th>必要なもの</th><th>備考</th></tr></thead>
+    <tbody>
+      <tr><td>共有コア（Kotlin）</td><td>JDK 17以上、Gradle 8.x</td><td>Android SDK は不要</td></tr>
+      <tr><td>Androidアプリ</td><td>Android SDK（API 35）、Build Tools 35.0.0</td><td>Android Studio でも可</td></tr>
+      <tr><td>Web</td><td>Node.js 20以上</td><td>依存パッケージなし</td></tr>
+      <tr><td>ブラウザE2E</td><td>Playwright + Chromium</td><td><code>npm i -D playwright</code></td></tr>
+      <tr><td>iOS</td><td>macOS、Xcode 15以上、XcodeGen</td><td>実機（カメラを使うため）</td></tr>
+      <tr><td>通信監視</td><td>tcpdump、Python 3.9以上</td><td>解析スクリプトは標準ライブラリのみ</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>ビルドと実行</h2>
+
+  <h3>1. 共有コア（Kotlin）のテスト</h3>
+  <p>Android SDK が無い環境でも実行できます。業務ロジックの検証はここが中心です。</p>
+<pre><code>cd secure-local-ocr/android
+gradle :core:test</code></pre>
+
+  <h3>2. Androidアプリ</h3>
+<pre><code>export ANDROID_HOME=/path/to/android-sdk
+
+cd secure-local-ocr/android
+
+# 通信を一切行わないビルド（OCR専用・INTERNET権限なし）
+gradle :app:assembleOfflineDebug
+
+# Web入力支援まで行うビルド
+gradle :app:assembleWebDebug
+
+# offline ビルドに通信権限が混入していないことを検証（ビルドも自動で走ります）
+gradle :app:verifyOfflineFlavorHasNoInternet</code></pre>
+  <p>生成物は <code>android/app/build/outputs/apk/&lt;flavor&gt;/debug/</code> に出ます。</p>
+<pre><code>adb install -r app/build/outputs/apk/offline/debug/app-offline-debug.apk</code></pre>
+
+  <div class="callout">
+    <code>verifyOfflineFlavorHasNoInternet</code> は飾りではありません。
+    依存ライブラリのマニフェストから <code>INTERNET</code> 権限が実際に混入した経緯が
+    <a href="振り返り.html">振り返り</a> にあります。ビルドのたびに実行してください。
+  </div>
+
+  <h3>3. Web（登録先サイトと入居フォーム）</h3>
+<pre><code>cd secure-local-ocr/web
+node server.mjs                       # http://127.0.0.1:8787/
+node server.mjs 8787 192.168.1.10     # 実機検証時のみ: 同じWi-Fi上のタブレットから繋ぐ
+
+# 共有コア（JS）のベクタテスト
+npm test
+
+# ブラウザE2E（Playwrightが必要）
+npm i -D playwright
+npm run test:e2e</code></pre>
+  <p>ブラウザで開く画面：</p>
+  <ul>
+    <li><code>http://127.0.0.1:8787/</code> — 説明と入口</li>
+    <li><code>http://127.0.0.1:8787/intake/</code> — 入居フォーム（Web入力の取込元）</li>
+    <li><code>http://127.0.0.1:8787/registration/</code> — 登録先の申込フォーム</li>
+  </ul>
+
+  <h3>4. 実機（Androidタブレット）で確認する</h3>
+  <p>
+    APKはCIがビルドし、Releaseから直接ダウンロードできます（リポジトリは非公開のため、
+    タブレットのブラウザでGitHubにログインしてください）。
+    手順は <a href="docs/tablet-check.html">タブレット実機確認の手順</a> にまとめています。
+    検証用紙は <code>samples/test-form-01.pdf</code> / <code>test-form-02.pdf</code>、
+    期待値は <code>samples/expected-values.html</code> です。
+  </p>
+  <p class="note">
+    タブレット単体で、OCR精度・処理速度・機内モードでの完走・
+    「通信権限を持たないこと」まで確認できます。
+    Webフォームへの充填だけは、同じWi-Fi上のPCで参照実装を動かす必要があります。
+  </p>
+
+  <h3>5. iOS / iPadOS</h3>
+<pre><code>cd secure-local-ocr/ios/SloCore
+swift test                            # 共有コアのベクタテスト
+
+cd ..
+brew install xcodegen
+xcodegen generate
+open SecureLocalOcr.xcodeproj</code></pre>
+  <p class="note">
+    共有コア <code>SloCore</code> は UIKit/SwiftUI に依存しないため <strong>Linux でも
+    <code>swift test</code> が通ります</strong>（6件成功。CIでも毎回実行しています）。
+    一方 <code>SecureLocalOcr/</code>（SwiftUIアプリ・Vision Framework）は
+    Apple プラットフォームでしかビルドできず、<strong>動作確認は未実施</strong>です。
+    詳細は <code>ios/README.md</code> を参照してください。
+  </p>
+</section>
+
+<section>
+  <h2>動かしてみる（Web連携の確認）</h2>
+  <ol>
+    <li><code>node server.mjs</code> でサーバを起動する</li>
+    <li><code>http://127.0.0.1:8787/intake/</code> を開く</li>
+    <li>架空データを入力する。たとえば氏名「山田 太郎」、生年月日「昭和55年1月1日」、
+        郵便番号「〒150-0001」、電話「090-1234-5678」</li>
+    <li>入力するそばから正規化結果が表示される（半角カナ→全角、和暦→西暦、など）</li>
+    <li>「確認して登録先へ引き渡す」を押す。登録先の画面が開く</li>
+    <li>入力欄が自動で埋まる。生年月日は <code>1980/01/01</code>、郵便番号と電話番号は
+        登録先の欄割りに合わせて分割される</li>
+    <li><strong>送信ボタンは押されない。</strong>内容を確認して自分で押す</li>
+    <li>画面下の監査ログに値が一切出ていないことを確認する</li>
+  </ol>
+  <p>
+    アプリからの引き渡しも同じ経路です。Androidエミュレータからホストの参照実装へ繋ぐ場合は
+    <code>http://10.0.2.2:8787/registration/</code> を対象URLに設定してください。
+  </p>
+</section>
+
+<section>
+  <h2>テスト</h2>
+  <table>
+    <thead><tr><th>コマンド</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><code>gradle :core:test</code></td><td>Kotlin共有コア。共通ベクタ全件</td></tr>
+      <tr><td><code>npm test</code>（web）</td><td>JavaScript共有コア。同じ共通ベクタ</td></tr>
+      <tr><td><code>npm run test:e2e</code>（web）</td><td>実ブラウザでの一連の流れと拒否条件</td></tr>
+      <tr><td><code>swift test</code>（ios/SloCore）</td><td>Swift共有コア。同じ共通ベクタ</td></tr>
+      <tr><td><code>gradle :app:verifyOfflineFlavorHasNoInternet</code></td><td>実APKの通信権限検査</td></tr>
+      <tr><td><code>tools/verify_no_network.sh</code></td><td>APKの静的検査＋動的検査の手順表示</td></tr>
+      <tr><td><code>tools/analyze_pcap.py capture.pcap --phase ocr</code></td><td>通信監視結果の判定</td></tr>
+    </tbody>
+  </table>
+
+  <h3>テストベクタを変更したとき</h3>
+  <p>
+    <code>protocol/testdata/</code> は3実装が共有します。
+    片方だけ通ってもう片方が落ちたら、<strong>実装のどちらかが仕様から外れた</strong>ということです。
+    ベクタを緩めて通すのではなく、実装を直してください。
+  </p>
+  <p>正準化/HMACのベクタは生成物です。仕様を変えたときだけ再生成します。</p>
+<pre><code>python3 tools/gen_canonical_vectors.py</code></pre>
+</section>
+
+<section>
+  <h2>登録先サイトへの組み込み方</h2>
+  <p>登録先の業務Webサイト側で必要なのは、次の2つだけです。</p>
+
+  <h3>1. マッピング定義を用意する</h3>
+<pre><code>{
+  "site": "example-residency",
+  "document_type": "residency_application",
+  "map": {
+    "name":        { "selector": "#applicant_name" },
+    "birthday":    { "selector": "#birth", "format": "YYYY/MM/DD" },
+    "postal_code": { "selector": ["#zip1", "#zip2"], "split": "-" },
+    "phone":       { "selector": ["#tel1","#tel2","#tel3"], "split": "jp-phone" }
+  }
+}</code></pre>
+
+  <h3>2. ブリッジを読み込む</h3>
+<pre><code>import { installBridge } from '/slo/slo-bridge.js';
+
+const mapping = await fetch('/slo/mapping.json').then(r =&gt; r.json());
+const bridge = installBridge({
+  documentType: mapping.document_type,
+  mapping,
+  allowedHostOrigins: [window.location.origin],
+  onFilled: ({ filled, guessed }) =&gt; { /* 画面に知らせる */ },
+  onRejected: (code) =&gt; { /* 理由コードを表示する */ },
+});
+
+document.getElementById('btn-ready').addEventListener('click', () =&gt; bridge.ready());</code></pre>
+
+  <p>
+    これでOCRアプリからもWeb入力からも受け取れます。
+    ブリッジは<strong>入力欄を埋めるところまで</strong>しか行わず、送信は行いません。
+  </p>
+
+  <div class="callout">
+    ページのCSPを <code>script-src 'self'</code> にする場合、
+    <strong>インラインの <code>&lt;script&gt;</code> は動きません</strong>。
+    ページ用のスクリプトも外部ファイルにしてください（実際にこれで詰まりました）。
+  </div>
+</section>
+
+<section>
+  <h2>配布と運用</h2>
+
+  <h3>配布</h3>
+  <ul>
+    <li>業務専用端末にMDM経由で配布する。一般公開ストアでの配布は想定しない</li>
+    <li>リリースビルドは <code>gradle :app:assembleWebRelease</code>（署名設定は各組織の鍵で行う）</li>
+    <li>OCR専用運用（Web入力を行わない現場）では <code>offline</code> フレーバーを配布する</li>
+  </ul>
+
+  <h3>MDMで制御すべき項目</h3>
+  <ul>
+    <li>クラウド同期（写真・バックアップ）の禁止</li>
+    <li>USBデータ転送の禁止</li>
+    <li>スクリーンショットの禁止（特にiOSはアプリ側で防げないため必須）</li>
+    <li>クリップボード共有の制限</li>
+    <li>アプリの追加インストール制限</li>
+  </ul>
+
+  <h3>運用手順（1件あたり）</h3>
+  <ol>
+    <li>端末のロックを解除し、アプリを起動して認証する</li>
+    <li>書類を枠内に収めて撮影する</li>
+    <li>項目ごとに読み取り結果を確認し、必要なら修正して「確認」を付ける</li>
+    <li>「Web入力へ進む」を押す</li>
+    <li>登録先の画面で内容を再確認し、<strong>自分で</strong>登録ボタンを押す</li>
+    <li>「終了して破棄」を押す。扱っていたデータは端末から消える</li>
+  </ol>
+
+  <h3>やってはいけないこと</h3>
+  <ul>
+    <li>撮影画像・OCR結果・pcapをリポジトリへコミットする</li>
+    <li>実在の個人情報をテストデータに使う</li>
+    <li>監査ログに値を書き足す</li>
+    <li>「一括登録が便利だから」と自動送信を実装する</li>
+  </ul>
+</section>
+
+<section>
+  <h2>トラブルシューティング</h2>
+  <table>
+    <thead><tr><th>症状</th><th>原因と対処</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>ブリッジが動かない（<code>window.SLO</code> が undefined）</td>
+        <td>CSPがインラインスクリプトを止めている。ページのスクリプトを外部ファイルにする</td>
+      </tr>
+      <tr>
+        <td>取込元が見つからない</td>
+        <td>登録先ページを単体で開いている。OCRアプリのWebView内か、入居フォームから開く</td>
+      </tr>
+      <tr>
+        <td>引き渡しが <code>E_EXPIRED</code> で拒否される</td>
+        <td>Envelopeの有効期限（既定5分）切れ。取込元でやり直す。端末の時刻ずれも確認する</td>
+      </tr>
+      <tr>
+        <td>引き渡しが <code>E_VALIDATION</code> で拒否される</td>
+        <td>値が正規形になっていない。取込元と登録先で共有コアの版が食い違っていないか確認する</td>
+      </tr>
+      <tr>
+        <td>引き渡しが <code>E_ORIGIN</code> で拒否される</td>
+        <td>登録先のオリジンが許可リストに無い。アプリ側の許可リストを確認する</td>
+      </tr>
+      <tr>
+        <td><code>verifyOfflineFlavorHasNoInternet</code> が失敗する</td>
+        <td>依存ライブラリが権限を持ち込んでいる。<code>src/offline/AndroidManifest.xml</code> の
+            <code>tools:node="remove"</code> を確認する</td>
+      </tr>
+      <tr>
+        <td>Gradleが <code>:app</code> を認識しない</td>
+        <td><code>ANDROID_HOME</code> が未設定。SDKが無い環境では意図的に <code>:core</code> だけ構成される</td>
+      </tr>
+      <tr>
+        <td>OCRの精度が出ない</td>
+        <td>明るさ・反射・傾きを変えて撮り直す。枠内に収める。それでも駄目なら手入力に切り替える</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+<footer class="doc">
+  Secure Local OCR ／ 本書に登場する個人情報はすべて架空のものです。
+</footer>
+</body>
+</html>

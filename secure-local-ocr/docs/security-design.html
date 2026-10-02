@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セキュリティ設計 — Secure Local OCR</title>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>セキュリティ設計</h1>
+  <div class="meta">Secure Local OCR ／ 版 0.1</div>
+  <nav>
+    <a href="../README.html">README</a>
+    <a href="../要件定義.html">要件定義</a>
+    <a href="../振り返り.html">振り返り</a>
+    <a href="architecture.html">アーキテクチャ</a>
+    <a href="threat-model.html">脅威モデル</a>
+    <a href="test-plan.html">テスト計画</a>
+  </nav>
+</header>
+
+<main>
+
+<section>
+  <h2>1. 方針</h2>
+  <p>
+    本システムは「守るための機能を足す」のではなく、
+    <strong>危険なことができない構造にする</strong>ことを優先します。
+    実行時のチェックはすり抜けますが、権限を持たないビルドはすり抜けません。
+  </p>
+  <table>
+    <thead><tr><th>強さ</th><th>手段</th><th>本システムでの例</th></tr></thead>
+    <tbody>
+      <tr><td>強</td><td>OSが強制する</td><td>INTERNET権限を持たないビルド。FLAG_SECURE。バックアップ除外</td></tr>
+      <tr><td>中</td><td>ビルド時に機械検証する</td><td>APKの権限検査タスク。共通ベクタによる実装一致の検証</td></tr>
+      <tr><td>中</td><td>実行時に必ず通る経路で弾く</td><td>Envelope検証。監査ログの値検査</td></tr>
+      <tr><td>弱</td><td>実装者が気をつける</td><td>（これに頼る設計を避ける）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>2. 守る対象</h2>
+  <table>
+    <thead><tr><th>資産</th><th>存在する場所</th><th>生存期間</th></tr></thead>
+    <tbody>
+      <tr><td>撮影画像</td><td>端末メモリ</td><td>OCR完了まで（数秒）</td></tr>
+      <tr><td>OCR結果テキスト</td><td>端末メモリ</td><td>項目抽出まで</td></tr>
+      <tr><td>抽出された項目値</td><td>端末メモリ</td><td>セッション終了まで</td></tr>
+      <tr><td>確認済みEnvelope</td><td>端末メモリ／WebViewのJSコンテキスト</td><td>失効まで（既定5分）</td></tr>
+      <tr><td>セッション鍵</td><td>端末メモリ</td><td>セッション終了まで。終了時ゼロ埋め</td></tr>
+      <tr><td>監査ログ</td><td>アプリ専用領域（ディスク）</td><td>永続。<strong>値を含まない</strong></td></tr>
+    </tbody>
+  </table>
+  <p>ディスクに永続化される個人情報は<strong>ありません</strong>。これが設計の中心です。</p>
+</section>
+
+<section>
+  <h2>3. ネットワーク分離</h2>
+
+  <h3>3.1 権限による分離（Android）</h3>
+  <p>
+    <code>offline</code> フレーバーは <code>INTERNET</code> 権限を持ちません。
+    アプリのコードがソケットを開こうとしても、OSが拒否します。
+  </p>
+  <div class="callout">
+    <strong>実際に起きたこと。</strong>
+    権限を宣言しないだけでは足りませんでした。ML Kit が依存するライブラリのマニフェストから
+    <code>INTERNET</code> が自動的に取り込まれていたためです。
+    <code>tools:node="remove"</code> で明示的に除去し、
+    ビルドのたびに実APKを検査するタスクを追加しました。詳細は
+    <a href="../振り返り.html">振り返り</a> の課題1。
+  </div>
+
+  <h3>3.2 通信先の許可リスト</h3>
+  <table>
+    <thead><tr><th>層</th><th>実装</th><th>効果</th></tr></thead>
+    <tbody>
+      <tr><td>Android OS</td><td><code>network_security_config.xml</code></td><td>平文通信の全面禁止。ドメイン単位の設定</td></tr>
+      <tr><td>iOS OS</td><td>ATS（<code>NSAllowsArbitraryLoads = false</code>）</td><td>平文通信の全面禁止</td></tr>
+      <tr><td>アプリ</td><td>ブリッジのオリジン検証</td><td>許可リスト外のページへは値を渡さない</td></tr>
+      <tr><td>iOSアプリ</td><td><code>decidePolicyFor navigationAction</code></td><td>許可リスト外のURLへは遷移させない</td></tr>
+      <tr><td>登録先ページ</td><td>CSP <code>default-src 'self'</code></td><td>ページ自体が外部へ通信できない</td></tr>
+      <tr><td>登録先ページ</td><td><code>allowedHostOrigins</code></td><td>別オリジンからの引き渡しを破棄</td></tr>
+    </tbody>
+  </table>
+  <p>
+    層を重ねているのは、1つが破られても残りが効くようにするためです。
+    ブラウザE2Eでは、別オリジンのページからの引き渡しが
+    <code>ORIGIN_DENIED</code> として捨てられ、入力欄が空のままであることを確認しています。
+  </p>
+</section>
+
+<section>
+  <h2>4. 引き渡しの完全性</h2>
+  <p>受け取り側は、以下をすべて確認してから充填します。1つでも落ちたら値を1文字も入れません。</p>
+  <table>
+    <thead><tr><th>検査</th><th>防ぐもの</th><th>拒否コード</th></tr></thead>
+    <tbody>
+      <tr><td>オリジン許可リスト</td><td>悪意あるページへの値の流出</td><td><code>E_ORIGIN</code></td></tr>
+      <tr><td>プロトコル・Profile一致</td><td>版の食い違いによる誤解釈</td><td><code>E_PROTOCOL</code></td></tr>
+      <tr><td><code>confirmed</code> フラグ</td><td>未確認データの混入</td><td><code>E_UNCONFIRMED</code></td></tr>
+      <tr><td>失効時刻</td><td>古いEnvelopeの使い回し</td><td><code>E_EXPIRED</code></td></tr>
+      <tr><td>nonce の一致・単回消費</td><td>ハンドシェイクの横取り</td><td><code>E_NONCE</code></td></tr>
+      <tr><td><code>handoff_id</code> の重複</td><td>同じEnvelopeの再投入</td><td><code>E_REPLAY</code></td></tr>
+      <tr><td>正規化の再計算</td><td>正規形でない値・実装の版ずれ</td><td><code>E_VALIDATION</code></td></tr>
+      <tr><td>HMAC-SHA256</td><td>途中での改ざん・取り違え</td><td><code>E_INTEGRITY</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.1 HMACの位置づけ</h3>
+  <p>
+    セッション鍵は端末内で生成され、端末外へ出ません。
+    目的は<strong>秘匿ではなく、同一端末内での取り違え・改ざん・リプレイの検知</strong>です。
+    秘匿は「受け渡しが端末内で完結している」ことそのものが担保します。
+  </p>
+  <p>
+    署名対象は正準化JSON（キーをUTF-16コードユニット順にソートし、空白なしで直列化したもの）です。
+    3実装でバイト単位に一致させる必要があり、
+    数値の表現（<code>1.0</code> か <code>1</code> か）まで規則で固定しています。
+  </p>
+</section>
+
+<section>
+  <h2>5. 端末側の保護</h2>
+  <table>
+    <thead><tr><th>対策</th><th>Android</th><th>iOS</th><th>備考</th></tr></thead>
+    <tbody>
+      <tr><td>起動時認証</td><td>BiometricPrompt（生体＋画面ロック）</td><td>LocalAuthentication</td><td>画面ロック未設定の端末では利用させない</td></tr>
+      <tr><td>再認証</td><td>3分経過で値を破棄して再認証</td><td>同左（scenePhaseで判定）</td><td>置き忘れ対策</td></tr>
+      <tr><td>スクリーンショット抑止</td><td><code>FLAG_SECURE</code></td><td><span class="badge warn">不可</span></td><td>iOSは相当APIが無い</td></tr>
+      <tr><td>アプリ切替時の内容秘匿</td><td>FLAG_SECUREで併せて実現</td><td><code>.privacySensitive()</code></td><td>—</td></tr>
+      <tr><td>クラウドバックアップ禁止</td><td><code>allowBackup=false</code>＋抽出ルール</td><td><code>isExcludedFromBackup</code></td><td>—</td></tr>
+      <tr><td>写真ライブラリへの保存</td><td>行わない（アプリ内カメラ）</td><td>行わない（VisionKit）</td><td>iOSは権限説明自体を書いていない</td></tr>
+      <tr><td>クリップボード</td><td>機微フラグでプレビュー抑止</td><td>端末内限定・60秒で失効</td><td>MDMでの制限を併用</td></tr>
+      <tr><td>Root/Jailbreak</td><td>簡易検出で利用を止める</td><td>（同等の検出は今後）</td><td>回避可能。MDMが本命</td></tr>
+      <tr><td>WebViewの痕跡</td><td>キャッシュ無効・DOM Storage無効</td><td><code>nonPersistent()</code> データストア</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    <strong>iOSのスクリーンショットは、アプリ側では防げません。</strong>
+    Androidの<code>FLAG_SECURE</code>に相当するAPIがiOSには存在しないためです。
+    できるのはアプリスイッチャーでの内容秘匿までです。
+    この差を「実装漏れ」ではなく<strong>プラットフォームの制約</strong>として認識し、
+    運用（管理対象端末での制限）で補うことを前提にしてください。
+  </div>
+</section>
+
+<section>
+  <h2>6. 監査ログ</h2>
+  <p>
+    ログには「何が起きたか」だけを書き、「何が書かれていたか」は書きません。
+    方針として掲げるだけでは守られないので、実行時に検査します。
+  </p>
+  <ul>
+    <li>属性キーは許可リスト方式。<code>name</code> や <code>value</code> といったキーは受け付けない</li>
+    <li>属性値は、個人情報らしきパターン（7桁以上の連続数字・メールアドレス形式・
+        漢字の氏名らしき並び・4文字以上のかな）に一致したら例外にする</li>
+    <li>例外が出たら、その行は記録せず「記録を拒否した」という事実だけを残す</li>
+  </ul>
+  <p>Kotlin・Swift・JavaScriptの3実装すべてに同じ検査を入れ、自動テストで確認しています。</p>
+
+  <h3>記録される内容の例</h3>
+<pre><code>2026-08-22T07:11:41Z    HANDOFF_REQUESTED   document_type=residency_application fields=8
+2026-08-22T07:11:41Z    HANDOFF_DELIVERED   fields=8 handoff_id=14910608…
+2026-08-22T07:11:41Z    HANDOFF_VERIFIED    result=ok fields=8
+2026-08-22T07:11:41Z    FORM_FILLED         filled=8 skipped=0 guessed=0
+2026-08-22T07:12:03Z    SUBMIT_BY_HUMAN     document_type=residency_application</code></pre>
+  <p>誰の何を扱ったかは分かりませんが、いつ何件処理したかは追えます。監査の目的には足ります。</p>
+</section>
+
+<section>
+  <h2>7. 依存関係の方針</h2>
+  <p>
+    依存ライブラリは、コードだけでなく<strong>権限・通信・マニフェスト設定</strong>を持ち込みます。
+    実際にそれで通信権限が混入しました。
+  </p>
+  <table>
+    <thead><tr><th>方針</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>解析SDK・広告SDK・クラッシュレポータを入れない</td><td>個人情報を扱う画面から外部へ情報が出る経路になる</td></tr>
+      <tr><td>JSONライブラリを使わず自前実装</td><td>依存削減と、正準化を3実装で完全一致させる必要</td></tr>
+      <tr><td>OCRモデルはAPK同梱</td><td>モデル取得のための通信を発生させない</td></tr>
+      <tr><td>Webは依存パッケージ0</td><td>ブリッジは登録先サイトへ配布するもの。持ち込む依存を無くす</td></tr>
+      <tr><td>依存追加時はAPKの権限を再検査する</td><td>ビルドタスクで自動化済み</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>8. 現時点の限界</h2>
+  <table>
+    <thead><tr><th>限界</th><th>影響</th><th>補い方</th></tr></thead>
+    <tbody>
+      <tr><td>iOSでスクリーンショットを防げない</td><td>画面を撮影されれば個人情報が流出する</td><td>MDMでの制限。運用ルール</td></tr>
+      <tr><td>Root化検出は回避可能</td><td>改造端末での利用を完全には止められない</td><td>業務専用端末＋MDM</td></tr>
+      <tr><td>OCRエンジン自体は監査できない</td><td>ML Kit / Vision の内部動作は検証できない</td><td>通信監視で外部送信がないことを実測する</td></tr>
+      <tr><td>WebViewのJSコンテキストに値が渡る</td><td>登録先ページの実装不備があれば影響を受ける</td><td>オリジン許可リスト。マッピング定義の管理</td></tr>
+      <tr><td>実端末での通信監視が未実施</td><td>原則8をまだ満たしていない</td><td><a href="test-plan.html">テスト計画</a> の手順を実行する</td></tr>
+    </tbody>
+  </table>
+  <p>
+    限界を隠さず書くのは、運用側が判断できるようにするためです。
+    「アプリが守るので大丈夫」と言えない部分は、はっきりそう書きます。
+  </p>
+</section>
+
+</main>
+<footer class="doc">Secure Local OCR セキュリティ設計 版0.1</footer>
+</body>
+</html>

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テスト計画 — Secure Local OCR</title>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<header class="doc">
+  <h1>テスト計画</h1>
+  <div class="meta">Secure Local OCR ／ 版 0.1</div>
+  <nav>
+    <a href="../README.html">README</a>
+    <a href="../要件定義.html">要件定義</a>
+    <a href="../振り返り.html">振り返り</a>
+    <a href="architecture.html">アーキテクチャ</a>
+    <a href="security-design.html">セキュリティ設計</a>
+    <a href="threat-model.html">脅威モデル</a>
+    <a href="tablet-check.html">タブレット実機確認</a>
+  </nav>
+</header>
+
+<main>
+
+<section>
+  <h2>1. 方針</h2>
+  <p>
+    機能テストだけでは合格としません。
+    とくにネットワークについては<strong>「コード上では通信していない」を根拠にしない</strong>
+    という企画書の方針に従い、成果物と実端末で実測します。
+  </p>
+  <table>
+    <thead><tr><th>層</th><th>対象</th><th>頻度</th><th>自動化</th></tr></thead>
+    <tbody>
+      <tr><td>L1 単体</td><td>正規化・抽出・Envelope・監査ログ</td><td>毎コミット</td><td><span class="badge ok">済</span></td></tr>
+      <tr><td>L2 実装間一致</td><td>Kotlin / JavaScript / Swift の判定一致</td><td>毎コミット</td><td><span class="badge ok">済</span></td></tr>
+      <tr><td>L3 成果物検証</td><td>APKの権限・設定</td><td>毎ビルド</td><td><span class="badge ok">済</span></td></tr>
+      <tr><td>L4 ブラウザE2E</td><td>引き渡しから充填、拒否条件</td><td>毎コミット</td><td><span class="badge ok">済</span></td></tr>
+      <tr><td>L5 実端末機能</td><td>OCR精度・速度・操作性</td><td>リリース前</td><td><span class="badge ng">手動</span></td></tr>
+      <tr><td>L6 実端末セキュリティ</td><td>通信監視・データ残存</td><td>リリース前</td><td><span class="badge ng">手動</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>2. L1・L2: 自動テスト（実施済み）</h2>
+  <table>
+    <thead><tr><th>コマンド</th><th>内容</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr><td><code>gradle :core:test</code></td><td>Kotlin共有コア 7テスト（正規化61件・抽出6件・正準化6件を含む）</td><td><span class="badge ok">成功</span></td></tr>
+      <tr><td><code>npm test</code>（web）</td><td>JavaScript共有コア 6テスト</td><td><span class="badge ok">成功</span></td></tr>
+      <tr><td><code>swift test</code>（ios/SloCore）</td><td>Swift共有コア 6テスト</td><td><span class="badge ng">未実行（macOS不在）</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>2.1 共通テストベクタの内訳</h3>
+  <table>
+    <thead><tr><th>ファイル</th><th>件数</th><th>観点</th></tr></thead>
+    <tbody>
+      <tr><td><code>normalization-vectors.json</code></td><td>61</td><td>全角半角・半角カナ・和暦・OCR誤読・区切り記号ゆれ・境界値・不正値</td></tr>
+      <tr><td><code>extraction-vectors.json</code></td><td>6</td><td>ラベル同一行／次行／パターンのみ／住所の折り返し／低信頼度／ノイズ行</td></tr>
+      <tr><td><code>canonical-vectors.json</code></td><td>6</td><td>キー順・型・日本語とエスケープ・整数表現・入れ子・実Envelope</td></tr>
+    </tbody>
+  </table>
+  <p>
+    <code>canonical-vectors.json</code> は Python（第4の実装）で生成しています。
+    Kotlin・JavaScript・Swiftが同じ勘違いを共有していても、これとは一致しません。
+  </p>
+
+  <h3>2.2 OCRテストの観点（企画書19に対応）</h3>
+  <table>
+    <thead><tr><th>観点</th><th>L1で検証</th><th>実端末で検証</th></tr></thead>
+    <tbody>
+      <tr><td>日本語（漢字・かな・カナ）</td><td><span class="badge ok">済</span></td><td>必要</td></tr>
+      <tr><td>数字・英数字</td><td><span class="badge ok">済</span></td><td>必要</td></tr>
+      <tr><td>氏名・住所・電話番号・日付</td><td><span class="badge ok">済</span></td><td>必要</td></tr>
+      <tr><td>和暦</td><td><span class="badge ok">済</span>（明治〜令和）</td><td>必要</td></tr>
+      <tr><td>小さい文字</td><td>—</td><td>必要</td></tr>
+      <tr><td>傾いた書類</td><td>—</td><td>必要</td></tr>
+      <tr><td>暗い環境</td><td>—</td><td>必要</td></tr>
+      <tr><td>反射</td><td>—</td><td>必要</td></tr>
+      <tr><td>手書き文字</td><td>—</td><td>別途精度検証（MVP対象外）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>2-b. 実際の座標を使った抽出規則の検証（実施済み）</h2>
+  <p>
+    抽出規則の不具合には、手で書いた座標のテストでは出ないものがあります。
+    実際に出たのが、折り返した行の外接矩形が前の行と数ピクセル重なるために
+    住所の続きを取りこぼす問題です（振り返り 課題11）。
+    検証用サンプル画像を実際のOCRにかけ、返ってきた座標で抽出規則を通します。
+  </p>
+<pre><code>sudo apt-get install -y tesseract-ocr tesseract-ocr-jpn
+python3 tools/ocr_lines_from_image.py samples/test-form-01.png</code></pre>
+  <p>
+    出力は <code>protocol/testdata/extraction-vectors.json</code> の
+    <code>lines</code> と同じ形式なので、そのままベクタにできます。
+  </p>
+  <table>
+    <thead><tr><th>確認項目</th><th>合格条件</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr><td>表形式（test-form-01）</td><td>ラベルと値が正しく対応づく</td><td><span class="badge ok">合格</span>（OCR誤読の2項目を除き7項目）</td></tr>
+      <tr><td>ラベルが値の上（test-form-02）</td><td>直下のセルを値として拾う</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>住所の折り返し</td><td>重なった矩形でも連結する</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>1行に複数項目の小さい文字</td><td>—</td><td>住所が長くなる（既知・人間の確認で吸収）</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>この検証で確かめられないこと。</strong>
+    ここで使う Tesseract は、製品が使う ML Kit / Vision とは別のエンジンです。
+    読み取り精度も行の区切り方も違います。確かめられるのは
+    「実際の座標に対して抽出規則が正しく働くか」だけで、
+    <strong>OCR精度の検証にも、通信していないことの検証にもなりません</strong>。
+    実機での確認（L2）と通信の実測（L3・L4）を置き換えるものではありません。
+  </div>
+</section>
+
+<section>
+  <h2>3. L3: 成果物の検証（実施済み）</h2>
+<pre><code>gradle :app:verifyOfflineFlavorHasNoInternet
+tools/verify_no_network.sh</code></pre>
+  <table>
+    <thead><tr><th>確認項目</th><th>合格条件</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr><td>offline APKの権限</td><td>INTERNET・ACCESS_NETWORK_STATE を含まない</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>web APKの権限</td><td>INTERNET を含む（意図どおり）</td><td><span class="badge ok">確認済</span></td></tr>
+      <tr><td>ネットワークセキュリティ設定</td><td>APKに同梱されている</td><td><span class="badge ok">合格</span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    この検証は形式的なものではありません。実際に、依存ライブラリから
+    <code>INTERNET</code> 権限が混入していたのをここで発見しました。
+    依存を追加・更新したら必ず再実行してください。
+  </div>
+</section>
+
+<section>
+  <h2>4. L4: ブラウザE2E（実施済み）</h2>
+<pre><code>cd web &amp;&amp; npm run test:e2e</code></pre>
+  <table>
+    <thead><tr><th>#</th><th>シナリオ</th><th>合格条件</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td><td>入居フォーム → 登録先の一連の流れ</td>
+        <td>8項目が登録先の表記に変換されて充填される／人間が押すまで送信されない／
+            監査ログに値が出ない／外部ホストへの通信が0件</td>
+        <td><span class="badge ok">合格</span></td>
+      </tr>
+      <tr><td>2</td><td>失効したEnvelopeの投入</td><td><code>E_EXPIRED</code> で拒否。入力欄は空のまま</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>3</td><td>値を改ざんしたEnvelopeの投入</td><td><code>E_VALIDATION</code> で拒否。入力欄は空のまま</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>4</td><td>別オリジンからの引き渡し</td><td><code>ORIGIN_DENIED</code> を記録し破棄。入力欄は空のまま</td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>5</td><td>ループバック受け口への投入</td><td>正常Envelopeは受理／失効は <code>E_EXPIRED</code></td><td><span class="badge ok">合格</span></td></tr>
+      <tr><td>6</td><td>CSPヘッダ</td><td><code>default-src 'self'</code> と <code>connect-src 'self'</code> を含む</td><td><span class="badge ok">合格</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>5. L5: 実端末での機能テスト（未実施）</h2>
+  <div class="callout danger">
+    以下は実端末が用意でき次第、そのまま実行してください。
+    <strong>この節が埋まるまで MVP は合格ではありません。</strong>
+  </div>
+  <p>
+    Androidタブレットで実施する場合の具体的な手順（インストール方法・検証用紙・記録様式）は
+    <a href="tablet-check.html">タブレット実機確認の手順</a> にまとめています。
+    通信監視の機材が無くても、offlineビルドが INTERNET 権限を持たないことは端末上で確認できます。
+  </p>
+
+  <h3>5.1 準備</h3>
+  <ul>
+    <li>Android実端末（Android 8.0以上）</li>
+    <li>試験用帳票。<strong>架空データのみ</strong>を印字した入居申込書を用意する</li>
+    <li>照明条件の異なる場所（明るい室内・薄暗い室内・蛍光灯の反射がある場所）</li>
+  </ul>
+
+  <h3>5.2 試験項目</h3>
+  <table>
+    <thead><tr><th>#</th><th>項目</th><th>手順</th><th>合格条件</th></tr></thead>
+    <tbody>
+      <tr><td>M-01</td><td>オフラインでの完走</td><td>機内モードで 撮影→OCR→抽出→確認 まで操作</td><td>すべて完了できる</td></tr>
+      <tr><td>M-02</td><td>必須項目の抽出</td><td>正対・明るい環境で撮影</td><td>必須6項目が抽出され、修正不要または軽微な修正で済む</td></tr>
+      <tr><td>M-03</td><td>処理速度</td><td>撮影ボタンから結果表示までを計測（5回）</td><td>平均3秒以内</td></tr>
+      <tr><td>M-04</td><td>傾き耐性</td><td>15度・30度傾けて撮影</td><td>15度で必須項目が取れる。30度は要確認扱いでよい</td></tr>
+      <tr><td>M-05</td><td>暗所</td><td>薄暗い環境で撮影</td><td>読めない場合、誤った値を確定させず「要修正」になる</td></tr>
+      <tr><td>M-06</td><td>反射</td><td>光沢紙・蛍光灯下で撮影</td><td>同上</td></tr>
+      <tr><td>M-07</td><td>小さい文字</td><td>8pt程度の文字を含む帳票</td><td>読めない場合に誤読を確定させない</td></tr>
+      <tr><td>M-08</td><td>修正操作</td><td>誤認識された項目を手で直す</td><td>その場で再検証され、確認チェックが付けられる</td></tr>
+      <tr><td>M-09</td><td>必須不足の検出</td><td>一部項目を隠して撮影</td><td>不足項目が警告され、先へ進めない</td></tr>
+      <tr><td>M-10</td><td>Web入力支援</td><td>参照実装（10.0.2.2:8787）へ引き渡す</td><td>入力欄が埋まり、自動送信されない</td></tr>
+      <tr><td>M-11</td><td>再認証</td><td>確認画面で3分以上放置してから戻る</td><td>値が破棄され、認証からやり直しになる</td></tr>
+      <tr><td>M-12</td><td>スクリーンショット</td><td>確認画面でスクリーンショットを試みる</td><td>撮影できない（Android）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.3 精度の記録様式</h3>
+  <table>
+    <thead><tr><th>帳票</th><th>条件</th><th>氏名</th><th>フリガナ</th><th>生年月日</th><th>郵便番号</th><th>住所</th><th>電話</th><th>要修正数</th></tr></thead>
+    <tbody>
+      <tr><td>—</td><td>明所・正対</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>—</td><td>明所・15度</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>—</td><td>暗所</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>—</td><td>反射あり</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    </tbody>
+  </table>
+  <p>各セルには ○（そのまま使える）／△（軽微な修正）／×（読めない・誤り） を記入します。</p>
+</section>
+
+<section>
+  <h2>6. L6: 実端末でのセキュリティテスト（未実施）</h2>
+
+  <h3>6.1 通信監視（最重要）</h3>
+  <p>企画書20の合格条件そのものです。手順は <code>tools/verify_no_network.sh</code> も表示します。</p>
+
+  <h4>手順A: 機内モードでの機能確認</h4>
+  <ol>
+    <li>端末を機内モードにする</li>
+    <li>撮影 → OCR → 項目抽出 → 確認 まで操作する</li>
+    <li><strong>合格条件:</strong> すべて完了できる</li>
+  </ol>
+
+  <h4>手順B: 経路での捕捉（証跡を残す）</h4>
+  <ol>
+    <li>検証用PCでアクセスポイントを立て、端末を接続する</li>
+    <li>捕捉を開始する
+<pre><code>sudo tcpdump -i &lt;interface&gt; -w ocr_phase.pcap host &lt;端末のIP&gt;</code></pre></li>
+    <li>撮影 → OCR → 確認 まで操作する（Web入力へは進まない）</li>
+    <li>捕捉を停止し、解析する
+<pre><code>python3 tools/analyze_pcap.py ocr_phase.pcap --phase ocr</code></pre></li>
+    <li><strong>合格条件:</strong> 「合格」と表示され、端末外への宛先が0件</li>
+  </ol>
+
+  <h4>手順C: Web登録フェーズの許可リスト確認</h4>
+  <ol>
+    <li>同じ手順で捕捉しながら、Web入力まで進める</li>
+    <li>解析する
+<pre><code>python3 tools/analyze_pcap.py web_phase.pcap --phase web --allow &lt;業務サイトのIP&gt;</code></pre></li>
+    <li><strong>合格条件:</strong> 業務サイト以外の宛先が0件</li>
+  </ol>
+
+  <p class="note">
+    <code>analyze_pcap.py</code> は合成pcap3種（ループバックのみ／外部送信あり／許可先のみ）で
+    動作確認済みです。外部送信ありのケースで終了コード1を返すことを確認しています。
+  </p>
+
+  <h3>6.2 データ残存の確認</h3>
+  <table>
+    <thead><tr><th>#</th><th>項目</th><th>手順</th><th>合格条件</th></tr></thead>
+    <tbody>
+      <tr><td>S-01</td><td>画像の意図しない保存</td><td>撮影後、ギャラリーとDCIMを確認</td><td>撮影画像が存在しない</td></tr>
+      <tr><td>S-02</td><td>アプリ領域の残存</td><td><code>adb shell run-as jp.slo.android.offline ls -R</code></td><td>監査ログ以外に個人情報を含むファイルが無い</td></tr>
+      <tr><td>S-03</td><td>ログへの混入</td><td><code>adb logcat</code> を取得し、氏名・電話番号等で検索</td><td>1件も一致しない</td></tr>
+      <tr><td>S-04</td><td>監査ログの内容</td><td>監査ログを取り出して目視</td><td>イベント種別・件数・項目キーのみ。値が無い</td></tr>
+      <tr><td>S-05</td><td>クリップボード残存</td><td>コピー後、別アプリで貼り付けを試す</td><td>機微フラグでプレビューされない（iOSは60秒で失効）</td></tr>
+      <tr><td>S-06</td><td>アプリ終了後の残存</td><td>アプリを終了し再起動</td><td>前回の項目値が復元されない</td></tr>
+      <tr><td>S-07</td><td>クラウド同期</td><td>バックアップを実行し内容を確認</td><td>アプリのデータが含まれない</td></tr>
+      <tr><td>S-08</td><td>タスク切替時の表示</td><td>アプリスイッチャーを開く</td><td>画面内容が見えない</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>7. 記録様式</h2>
+  <p>実端末試験の結果は以下の形式で残します。pcapや撮影画像は個人情報を含み得るためコミットしません。</p>
+<pre><code>試験日        : 2026-__-__
+実施者        : 
+端末          : （機種 / OSバージョン）
+ビルド        : app-offline-debug.apk / versionCode 1 / SHA-256 ____
+試験項目      : M-01 〜 M-12 / S-01 〜 S-08 / 通信監視 手順A・B・C
+結果          : 合格 / 不合格（不合格の場合は項目番号と内容）
+pcapのハッシュ: SHA-256 ____（ファイル本体は社内の指定場所に保管）
+特記事項      : </code></pre>
+</section>
+
+<section>
+  <h2>8. 回帰テストの運用</h2>
+  <table>
+    <thead><tr><th>変更内容</th><th>再実行するもの</th></tr></thead>
+    <tbody>
+      <tr><td>正規化・抽出の規則を変えた</td><td>L1・L2 の全実装（3言語すべて）</td></tr>
+      <tr><td>プロトコルを変えた</td><td>L1・L2・L4。ベクタの再生成が必要な場合あり</td></tr>
+      <tr><td>依存ライブラリを追加・更新した</td><td><strong>L3を必ず</strong>。加えてL6の通信監視</td></tr>
+      <tr><td>ブリッジ・登録先ページを変えた</td><td>L4</td></tr>
+      <tr><td>カメラ・OCR周りを変えた</td><td>L5・L6</td></tr>
+      <tr><td>UIの文言だけ変えた</td><td>L1・L4（回帰確認）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>テストベクタが落ちたときの原則。</strong>
+    共通ベクタは3実装の一致を保証するためのものです。
+    片方だけ落ちたら、実装が仕様から外れたということです。
+    <strong>ベクタを緩めて通すことはしません。</strong>実装を直してください。
+  </div>
+</section>
+
+</main>
+<footer class="doc">Secure Local OCR テスト計画 版0.1 ／ テストデータはすべて架空のものです。</footer>
+</body>
+</html>

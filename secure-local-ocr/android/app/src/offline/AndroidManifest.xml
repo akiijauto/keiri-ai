@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  offline フレーバー: INTERNET 権限を持たせない。
+  「通信していない」ことをコードの約束ではなくOSの権限モデルで保証する。
+
+  重要:
+  依存ライブラリ（ML Kit が依存する play-services 系）のマニフェストが
+  INTERNET / ACCESS_NETWORK_STATE を宣言しており、マニフェストマージャによって
+  自動的に取り込まれてしまう。宣言しないだけでは足りないため、明示的に取り除く。
+  取り除けているかは :app:verifyOfflineFlavorHasNoInternet が毎回検証する。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+</manifest>
