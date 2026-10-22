@@ -221,6 +221,9 @@ def export_csv(req: ExportRequest) -> Response:
     )
     if not rows:
         raise HTTPException(400, "出力する仕訳がありません")
+    balanced, message = freee_csv.validate_balance(rows)
+    if not balanced:
+        raise HTTPException(400, message)
 
     data = freee_csv.build_csv(rows, encoding=req.encoding)
     return Response(
